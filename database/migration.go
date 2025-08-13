@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"os"
 	"passport-booking/logger"
+	"passport-booking/models/address"
+	"passport-booking/models/booking"
 	"passport-booking/models/log"
 	"passport-booking/models/user"
 	"reflect"
@@ -77,7 +79,8 @@ func getRegisteredModels() []ModelInfo {
 	models := []interface{}{
 		// Core models
 		&user.User{},
-		&user.Address{},
+		&address.Address{},
+		&booking.Booking{},
 
 		// Log models
 		&log.Log{},
@@ -143,6 +146,7 @@ func extractForeignKeyRelationships(modelType reflect.Type, fields *[]FieldInfo,
 	tableNameMap := map[string]string{
 		"User":    "users",
 		"Address": "addresses",
+		"Booking": "bookings",
 		"Log":     "logs",
 	}
 

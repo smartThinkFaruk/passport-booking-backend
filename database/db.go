@@ -5,6 +5,8 @@ import (
 	"os"
 
 	"passport-booking/logger"
+	"passport-booking/models/address"
+	"passport-booking/models/booking"
 	"passport-booking/models/log"
 	"passport-booking/models/user"
 
@@ -90,10 +92,21 @@ func autoMigrate() error {
 	// Stage 1: Core foundation models
 	stage1Models := []interface{}{
 		&user.User{},
-		&user.Address{},
+		&address.Address{},
 	}
 
 	for _, model := range stage1Models {
+		if err := DB.AutoMigrate(model); err != nil {
+			return fmt.Errorf("failed to migrate %T: %w", model, err)
+		}
+	}
+
+	// Stage 2: Models with dependencies on Stage 1
+	stage2Models := []interface{}{
+		&booking.Booking{},
+	}
+
+	for _, model := range stage2Models {
 		if err := DB.AutoMigrate(model); err != nil {
 			return fmt.Errorf("failed to migrate %T: %w", model, err)
 		}
@@ -130,6 +143,34 @@ func createIndexes() error {
 		return fmt.Errorf("failed to create user phone index: %w", err)
 	}
 
+	// Address indexes
+	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_addresses_division ON addresses(division)").Error; err != nil {
+		return fmt.Errorf("failed to create address division index: %w", err)
+	}
+	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_addresses_district ON addresses(district)").Error; err != nil {
+		return fmt.Errorf("failed to create address district index: %w", err)
+	}
+	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_addresses_police_station ON addresses(police_station)").Error; err != nil {
+		return fmt.Errorf("failed to create address police_station index: %w", err)
+	}
+
+	// Booking indexes
+	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_app_or_order_id ON bookings(app_or_order_id)").Error; err != nil {
+		return fmt.Errorf("failed to create booking app_or_order_id index: %w", err)
+	}
+	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_phone ON bookings(phone)").Error; err != nil {
+		return fmt.Errorf("failed to create booking phone index: %w", err)
+	}
+	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status)").Error; err != nil {
+		return fmt.Errorf("failed to create booking status index: %w", err)
+	}
+	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_address_id ON bookings(address_id)").Error; err != nil {
+		return fmt.Errorf("failed to create booking address_id index: %w", err)
+	}
+	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_created_at ON bookings(created_at)").Error; err != nil {
+		return fmt.Errorf("failed to create booking created_at index: %w", err)
+	}
+
 	// Log indexes
 	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_logs_method ON logs(method)").Error; err != nil {
 		return fmt.Errorf("failed to create log method index: %w", err)
@@ -150,7 +191,14 @@ func createForeignKeyConstraints() error {
 	constraints := []struct {
 		name string
 		sql  string
-	}{}
+	}{
+		{
+			name: "fk_bookings_address",
+			sql: `ALTER TABLE bookings ADD CONSTRAINT fk_bookings_address 
+				  FOREIGN KEY (address_id) REFERENCES addresses(id) 
+				  ON UPDATE CASCADE ON DELETE RESTRICT`,
+		},
+	}
 
 	for _, constraint := range constraints {
 		// Check if constraint already exists
