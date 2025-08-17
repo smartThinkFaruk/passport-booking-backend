@@ -1,19 +1,19 @@
 package booking
 
 import (
-	"passport-booking/models/user"
 	"passport-booking/models/address"
+	"passport-booking/models/user"
 	"time"
 )
 
 // Booking represents a booking record with user information and address
 type Booking struct {
-	ID                    uint    `gorm:"primaryKey;autoIncrement" json:"id"`
+	ID uint `gorm:"primaryKey;autoIncrement" json:"id"`
 
 	// Foreign key for users relationship
-	UserID                uint    `gorm:"not null" json:"user_id"`
-	User 			      user.User `gorm:"foreignKey:UserID" json:"user"`
-	
+	UserID uint      `gorm:"not null" json:"user_id"`
+	User   user.User `gorm:"foreignKey:UserID" json:"user"`
+
 	AppOrOrderID          string  `gorm:"type:varchar(255);not null;unique" json:"app_or_order_id"`
 	CurrentBagID          *string `gorm:"type:varchar(255)" json:"current_bag_id,omitempty"`
 	Barcode               *string `gorm:"type:varchar(255)" json:"barcode,omitempty"`
@@ -29,10 +29,23 @@ type Booking struct {
 	AddressID   uint            `gorm:"not null" json:"address_id"`
 	AddressInfo address.Address `gorm:"foreignKey:AddressID" json:"address_info"`
 
-	Status	  string    `gorm:"type:varchar(50);not null" json:"status"` 
-	CreatedBy string    `gorm:"type:varchar(255);not null" json:"created_by"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
-	UpdatedBy string    `gorm:"type:varchar(255)" json:"updated_by,omitempty"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
-	DeletedAt *time.Time `gorm:"index" json:"deleted_at,omitempty"` // Soft delete field
+	Status      BookingStatus `gorm:"size:20;not null;default:initial" json:"status"`
+	BookingDate time.Time     `gorm:"autoCreateTime" json:"booking_date"`
+	CreatedBy   string        `gorm:"type:varchar(255);not null" json:"created_by"`
+	CreatedAt   time.Time     `gorm:"autoCreateTime" json:"created_at"`
+	UpdatedBy   string        `gorm:"type:varchar(255)" json:"updated_by,omitempty"`
+	UpdatedAt   time.Time     `gorm:"autoUpdateTime" json:"updated_at"`
+	DeletedAt   *time.Time    `gorm:"index" json:"deleted_at,omitempty"` // Soft delete field
 }
+
+
+// BookingStatus represents the status of a booking
+type BookingStatus string
+
+const (
+	BookingStatusInitial   BookingStatus = "initial"
+	BookingStatusPreBooked BookingStatus = "pre_booked"
+	BookingStatusBooked    BookingStatus = "booked"
+	BookingStatusReturn    BookingStatus = "return"
+	BookingStatusDelivered BookingStatus = "delivered"
+)

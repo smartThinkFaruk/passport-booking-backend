@@ -1,15 +1,14 @@
 package routes
 
 import (
-	// "passport-booking/constants"
+	"passport-booking/constants"
 	"os"
 	"passport-booking/controllers/auth"
+	"passport-booking/controllers/booking"
 	"passport-booking/controllers/user"
 	httpServices "passport-booking/httpServices/sso"
 	"passport-booking/logger"
 	"passport-booking/middleware"
-
-	//"passport-booking/middleware"
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 )
@@ -18,6 +17,7 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	ssoClient := httpServices.NewClient(os.Getenv("SSO_BASE_URL"))
 	asyncLogger := logger.NewAsyncLogger(db)
 	authController := auth.NewAuthController(ssoClient, db, asyncLogger)
+	bookingController := booking.NewBookingController(db, asyncLogger)
 
 	// Start the async logger processing goroutine
 	go asyncLogger.ProcessLog()
@@ -45,10 +45,13 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	auth.Get("/profile", user.GetUserInfo)
 	auth.Post("/logout", authController.LogOut)
 
-	// bookingGroup := api.Group("/booking")
+	/*=============================================================================
+	| Booking Routes
+	===============================================================================*/
+	bookingGroup := api.Group("/booking")
 
-	// bookingGroup.Post("/create", middleware.RequirePermissions(
-	// 	constants.PermAgentHasFull,
-	// ), bookingController.Store)
+	bookingGroup.Post("/create", middleware.RequirePermissions(
+		constants.PermAgentHasFull,
+	), bookingController.Store)
 
 }

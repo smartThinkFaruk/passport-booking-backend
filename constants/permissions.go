@@ -8,7 +8,7 @@ const (
 	PermPostOfficeFull    = "passport-booking.post-master.full-permit"
 	PermOrgSupervisorFull = "passport-booking.supervisor.full-permit"
 	PermOperatorHasFull   = "passport-booking.operator.has-full-permit"
-	PermAgentHasFull      = "passport-booking.agent.has-full-permit"
+	PermAgentHasFull      = "passport-booking.agent.full-permit"
 	PermPostmanFull       = "passport-booking.postman.has-full-permit"
 
 	// Special permissions
