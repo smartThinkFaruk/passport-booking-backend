@@ -7,6 +7,7 @@ import (
 	"passport-booking/models/address"
 	"passport-booking/models/booking"
 	"passport-booking/models/log"
+	"passport-booking/models/otp"
 	"passport-booking/models/user"
 	"reflect"
 	"strings"
@@ -81,6 +82,9 @@ func getRegisteredModels() []ModelInfo {
 		&user.User{},
 		&address.Address{},
 		&booking.Booking{},
+
+		// OTP models
+		&otp.OTP{},
 
 		// Log models
 		&log.Log{},

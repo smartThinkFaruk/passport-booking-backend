@@ -11,6 +11,7 @@ type BookingCreateRequest struct {
 	FatherName            string `json:"father_name" validate:"required,min=1,max=255"`
 	MotherName            string `json:"mother_name" validate:"required,min=1,max=255"`
 	Phone                 string `json:"phone" validate:"required,min=1,max=20"`
+	DeliveryPhone         string `json:"delivery_phone" validate:"omitempty,min=1,max=20"`
 	Address               string `json:"address" validate:"required,min=1"`
 	EmergencyContactName  string `json:"emergency_contact_name" validate:"omitempty,max=255"`
 	EmergencyContactPhone string `json:"emergency_contact_phone" validate:"omitempty,max=20"`

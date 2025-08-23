@@ -1,14 +1,16 @@
 package routes
 
 import (
-	"passport-booking/constants"
 	"os"
+	"passport-booking/constants"
 	"passport-booking/controllers/auth"
 	"passport-booking/controllers/booking"
+	"passport-booking/controllers/otp"
 	"passport-booking/controllers/user"
 	httpServices "passport-booking/httpServices/sso"
 	"passport-booking/logger"
 	"passport-booking/middleware"
+
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 )
@@ -18,6 +20,7 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	asyncLogger := logger.NewAsyncLogger(db)
 	authController := auth.NewAuthController(ssoClient, db, asyncLogger)
 	bookingController := booking.NewBookingController(db, asyncLogger)
+	otpController := otp.NewOTPController(db, asyncLogger)
 
 	// Start the async logger processing goroutine
 	go asyncLogger.ProcessLog()
@@ -53,5 +56,31 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	bookingGroup.Post("/create", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
 	), bookingController.Store)
+
+	// Delivery phone management routes
+	bookingGroup.Put("/delivery-phone", middleware.RequirePermissions(
+		constants.PermAgentHasFull,
+	), bookingController.UpdateDeliveryPhone)
+
+	bookingGroup.Post("/verify-delivery-phone", middleware.RequirePermissions(
+		constants.PermAgentHasFull,
+	), bookingController.VerifyDeliveryPhone)
+
+	bookingGroup.Post("/otp-retry-info", middleware.RequirePermissions(
+		constants.PermAgentHasFull,
+	), bookingController.GetOTPRetryInfo)
+
+	bookingGroup.Post("/resend-otp", middleware.RequirePermissions(
+		constants.PermAgentHasFull,
+	), bookingController.ResendOTP)
+
+	/*=============================================================================
+	| OTP Routes
+	===============================================================================*/
+	otpGroup := api.Group("/otp")
+
+	// Public OTP routes (no authentication required for sending OTP)
+	otpGroup.Post("/send", otpController.SendOTP)
+	otpGroup.Post("/verify", otpController.VerifyOTP)
 
 }
