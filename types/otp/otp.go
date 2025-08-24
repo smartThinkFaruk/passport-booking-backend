@@ -15,7 +15,10 @@ type VerifyOTPRequest struct {
 
 // OTPResponse represents the response for OTP operations
 type OTPResponse struct {
-	Message   string `json:"message"`
-	ExpiresAt string `json:"expires_at,omitempty"`
-	Success   bool   `json:"success"`
+	Message           string `json:"message"`
+	ExpiresAt         string `json:"expires_at,omitempty"`
+	Success           bool   `json:"success"`
+	RemainingAttempts *int   `json:"remaining_attempts,omitempty"`
+	IsBlocked         *bool  `json:"is_blocked,omitempty"`
+	NewOTPSent        bool   `json:"new_otp_sent,omitempty"`
 }

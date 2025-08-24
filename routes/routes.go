@@ -58,7 +58,7 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	), bookingController.Store)
 
 	// Delivery phone management routes
-	bookingGroup.Put("/delivery-phone", middleware.RequirePermissions(
+	bookingGroup.Post("/delivery-phone", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
 	), bookingController.UpdateDeliveryPhone)
 
@@ -74,6 +74,18 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 		constants.PermAgentHasFull,
 	), bookingController.ResendOTP)
 
+	// Booking-specific OTP routes (send OTP without updating phone)
+	bookingGroup.Post("/send-otp", middleware.RequirePermissions(
+		constants.PermAgentHasFull,
+	), otpController.SendOTPForBooking)
+
+	bookingGroup.Post("/verify-otp", middleware.RequirePermissions(
+		constants.PermAgentHasFull,
+	), otpController.VerifyOTPForBooking)
+
+	bookingGroup.Post("/otp-status", middleware.RequirePermissions(
+		constants.PermAgentHasFull,
+	), otpController.GetBookingOTPStatus)
 	/*=============================================================================
 	| OTP Routes
 	===============================================================================*/

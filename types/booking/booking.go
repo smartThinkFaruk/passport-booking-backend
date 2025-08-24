@@ -15,6 +15,7 @@ type BookingCreateRequest struct {
 	Address               string `json:"address" validate:"required,min=1"`
 	EmergencyContactName  string `json:"emergency_contact_name" validate:"omitempty,max=255"`
 	EmergencyContactPhone string `json:"emergency_contact_phone" validate:"omitempty,max=20"`
+	ReceiverName		      string `json:"receiver_name" validate:"omitempty,max=255"`
 	Division              string `json:"division" validate:"required,min=1,max=255"`
 	District              string `json:"district" validate:"required,min=1,max=255"`
 	PoliceStation         string `json:"police_station" validate:"required,min=1,max=255"`
@@ -41,6 +42,9 @@ func (r *BookingCreateRequest) Validate() error {
 	}
 	if r.Address == "" {
 		return fmt.Errorf("address is required")
+	}
+	if r.ReceiverName == "" {
+		return fmt.Errorf("receiver name is required")
 	}
 	if r.Division == "" {
 		return fmt.Errorf("division is required")

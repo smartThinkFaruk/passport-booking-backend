@@ -1,12 +1,17 @@
 package otp
 
 import (
+	"passport-booking/models/booking"
 	"time"
 )
 
 // OTP represents an OTP record for phone verification
 type OTP struct {
-	ID            uint       `gorm:"primaryKey;autoIncrement" json:"id"`
+	ID uint `gorm:"primaryKey;autoIncrement" json:"id"`
+
+	BookingID uint            `gorm:"not null" json:"booking_id"`
+	Booking   booking.Booking `gorm:"foreignKey:BookingID" json:"booking"`
+
 	Phone         string     `gorm:"type:varchar(20);not null;index" json:"phone"`
 	OTPCode       string     `gorm:"column:otp_code;type:varchar(6);not null" json:"otp_code"`
 	Purpose       OTPPurpose `gorm:"type:varchar(50);not null" json:"purpose"`

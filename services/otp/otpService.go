@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"passport-booking/httpServices/sms"
 	"passport-booking/models/otp"
 	"time"
 
@@ -12,12 +13,16 @@ import (
 
 // Service handles OTP operations
 type Service struct {
-	DB *gorm.DB
+	DB         *gorm.DB
+	SMSService *sms.SMSService
 }
 
 // NewOTPService creates a new OTP service
 func NewOTPService(db *gorm.DB) *Service {
-	return &Service{DB: db}
+	return &Service{
+		DB:         db,
+		SMSService: sms.NewSMSService(),
+	}
 }
 
 // GenerateOTP generates a random 6-digit OTP
@@ -40,12 +45,38 @@ func (s *Service) GenerateOTP() (string, error) {
 	return fmt.Sprintf("%06d", n.Int64()), nil
 }
 
-// SendOTP creates and stores an OTP for the given phone number with retry handling
+// SendOTP creates and stores an OTP for the given phone number with retry handling (for non-booking purposes)
 func (s *Service) SendOTP(phone string, purpose otp.OTPPurpose) (*otp.OTP, error) {
+	// For non-booking OTPs, we'll use booking ID 0 as a default
+	defaultBookingID := uint(0)
+	return s.SendOTPWithBookingID(phone, purpose, &defaultBookingID)
+}
+
+// SendOTPWithBookingID creates and stores an OTP for the given phone number with optional booking ID
+func (s *Service) SendOTPWithBookingID(phone string, purpose otp.OTPPurpose, bookingID *uint) (*otp.OTP, error) {
+	// Ensure we have a valid booking ID
+	if bookingID == nil {
+		return nil, fmt.Errorf("booking ID is required for OTP generation")
+	}
+
 	// Check if there's an existing active OTP for this phone and purpose
 	existingOTP, err := s.GetOTPStatus(phone, purpose)
 	if err != nil {
 		return nil, fmt.Errorf("failed to check existing OTP: %w", err)
+	}
+
+	// If there's an existing OTP that hasn't expired yet, don't send new OTP
+	if existingOTP != nil && !existingOTP.IsExpired() && !existingOTP.IsUsed {
+		return nil, fmt.Errorf("an OTP for this phone number is still active and hasn't expired yet. Please wait until it expires or use the existing OTP")
+	}
+
+	// If there's an expired OTP, mark it as used to clean up
+	if existingOTP != nil && existingOTP.IsExpired() && !existingOTP.IsUsed {
+		existingOTP.IsUsed = true
+		if err := s.DB.Save(existingOTP).Error; err != nil {
+			// Log error but continue
+			fmt.Printf("Failed to mark expired OTP as used: %v\n", err)
+		}
 	}
 
 	// If there's a valid existing OTP, return it (don't generate a new one)
@@ -78,6 +109,7 @@ func (s *Service) SendOTP(phone string, purpose otp.OTPPurpose) (*otp.OTP, error
 
 	// Create new OTP record with retry settings
 	newOTP := &otp.OTP{
+		BookingID:  *bookingID,
 		Phone:      phone,
 		OTPCode:    otpCode,
 		Purpose:    purpose,
@@ -92,9 +124,15 @@ func (s *Service) SendOTP(phone string, purpose otp.OTPPurpose) (*otp.OTP, error
 		return nil, fmt.Errorf("failed to create OTP record: %w", err)
 	}
 
-	// Here you would integrate with SMS service to actually send the OTP
-	// For now, we'll just return the OTP (in production, you should use a real SMS service)
-	fmt.Printf("OTP for %s: %s (Purpose: %s)\n", phone, otpCode, purpose)
+	// Send OTP via SMS
+	if err := s.SMSService.SendOTP(phone, otpCode); err != nil {
+		// Log the error but don't fail the OTP creation
+		// The OTP is still valid and can be used for testing/fallback
+		fmt.Printf("Failed to send OTP SMS to %s: %v\n", phone, err)
+		fmt.Printf("OTP for %s: %s (Purpose: %s) - SMS delivery failed, showing for testing\n", phone, otpCode, purpose)
+	} else {
+		fmt.Printf("OTP sent via SMS to %s (Purpose: %s)\n", phone, purpose)
+	}
 
 	return newOTP, nil
 }

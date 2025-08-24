@@ -45,6 +45,15 @@ func (bc *BookingController) Store(c *fiber.Ctx) error {
 		})
 	}
 
+	// Validate request using the validation method from types
+	if err := req.Validate(); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: err.Error(),
+			Data:    nil,
+		})
+	}
+
 	claims, ok := c.Locals("user").(map[string]interface{})
 	if !ok {
 		return c.Status(fiber.StatusUnauthorized).JSON(types.ApiResponse{
@@ -137,6 +146,7 @@ func (bc *BookingController) Store(c *fiber.Ctx) error {
 			Address:               req.Address,
 			EmergencyContactName:  &req.EmergencyContactName,
 			EmergencyContactPhone: &req.EmergencyContactPhone,
+			ReceiverName:          &req.ReceiverName,
 			AddressID:             address.ID, // Link to the created address
 			Status:                bookingModel.BookingStatusInitial,
 			BookingDate:           time.Now(),
@@ -147,7 +157,7 @@ func (bc *BookingController) Store(c *fiber.Ctx) error {
 		// Handle delivery phone if provided
 		if req.DeliveryPhone != "" {
 			booking.DeliveryPhone = &req.DeliveryPhone
-			booking.DeliveryPhoneVerified = false
+			booking.DeliveryPhoneAppliedVerified = false
 		}
 
 		if err := tx.Create(&booking).Error; err != nil {
@@ -201,6 +211,15 @@ func (bc *BookingController) UpdateDeliveryPhone(c *fiber.Ctx) error {
 		})
 	}
 
+	// Validate request using the validation method from types
+	if err := req.Validate(); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: err.Error(),
+			Data:    nil,
+		})
+	}
+
 	// Find the booking
 	var booking bookingModel.Booking
 	if err := bc.DB.First(&booking, req.BookingID).Error; err != nil {
@@ -221,7 +240,7 @@ func (bc *BookingController) UpdateDeliveryPhone(c *fiber.Ctx) error {
 
 	// Update delivery phone
 	booking.DeliveryPhone = &req.DeliveryPhone
-	booking.DeliveryPhoneVerified = false // Reset verification status
+	booking.DeliveryPhoneAppliedVerified = false // Reset verification status
 
 	if err := bc.DB.Save(&booking).Error; err != nil {
 		logger.Error("Failed to update delivery phone", err)
@@ -232,10 +251,52 @@ func (bc *BookingController) UpdateDeliveryPhone(c *fiber.Ctx) error {
 		})
 	}
 
+	// Send OTP to the new delivery phone
+	otpSvc := otpService.NewOTPService(bc.DB)
+	otpRecord, err := otpSvc.SendOTPWithBookingID(req.DeliveryPhone, otp.OTPPurposeDeliveryApplyPhone, &req.BookingID)
+	if err != nil {
+		logger.Error("Failed to send OTP to delivery phone", err)
+
+		// Check if it's a blocking error that should be returned as error response
+		errMsg := err.Error()
+		if errMsg == "OTP requests are blocked permanently due to too many failed attempts" ||
+			(len(errMsg) > 20 && errMsg[:20] == "OTP requests are blocked until") {
+			return c.Status(fiber.StatusTooManyRequests).JSON(types.ApiResponse{
+				Status:  fiber.StatusTooManyRequests,
+				Message: err.Error(),
+				Data:    nil,
+			})
+		}
+
+		// For other OTP errors, return error response instead of continuing
+		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to send OTP to delivery phone",
+			Data: map[string]interface{}{
+				"booking":   booking,
+				"otp_error": err.Error(),
+			},
+		})
+	} else {
+		logger.Success(fmt.Sprintf("OTP sent to delivery phone %s for booking ID: %d", req.DeliveryPhone, req.BookingID))
+	}
+
+	responseData := map[string]interface{}{
+		"booking": booking,
+	}
+
+	if otpRecord != nil {
+		responseData["otp_info"] = map[string]interface{}{
+			"otp_id":     otpRecord.ID,
+			"expires_at": otpRecord.ExpiresAt,
+			"phone":      req.DeliveryPhone,
+		}
+	}
+
 	return c.Status(fiber.StatusOK).JSON(types.ApiResponse{
 		Status:  fiber.StatusOK,
-		Message: "Delivery phone updated successfully",
-		Data:    booking,
+		Message: "Delivery phone updated and OTP sent successfully",
+		Data:    responseData,
 	})
 }
 
@@ -247,6 +308,15 @@ func (bc *BookingController) VerifyDeliveryPhone(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(types.ApiResponse{
 			Status:  fiber.StatusBadRequest,
 			Message: "Invalid request body",
+			Data:    nil,
+		})
+	}
+
+	// Validate request using the validation method from types
+	if err := req.Validate(); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: err.Error(),
 			Data:    nil,
 		})
 	}
@@ -283,9 +353,28 @@ func (bc *BookingController) VerifyDeliveryPhone(c *fiber.Ctx) error {
 	isValid, otpRecord, err := otpSvc.VerifyOTPWithDetails(req.Phone, req.OTPCode, otp.OTPPurposeDeliveryApplyPhone)
 	if err != nil {
 		logger.Error("Failed to verify OTP", err)
+
+		// If we have an OTP record, we can provide more detailed error information
+		if otpRecord != nil {
+			remainingAttempts := otpRecord.MaxRetries - otpRecord.RetryCount
+			isBlocked := otpRecord.IsCurrentlyBlocked()
+
+			return c.Status(fiber.StatusBadRequest).JSON(types.ApiResponse{
+				Status:  fiber.StatusBadRequest,
+				Message: err.Error(), // This will contain the detailed error message with attempts
+				Data: map[string]interface{}{
+					"error":              err.Error(),
+					"remaining_attempts": remainingAttempts,
+					"is_blocked":         isBlocked,
+					"success":            false,
+				},
+			})
+		}
+
+		// Fallback for other errors
 		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
 			Status:  fiber.StatusInternalServerError,
-			Message: "Internal server error",
+			Message: err.Error(), // Show the actual error message instead of generic
 			Data:    nil,
 		})
 	}
@@ -299,30 +388,24 @@ func (bc *BookingController) VerifyDeliveryPhone(c *fiber.Ctx) error {
 	}
 
 	// Encrypt OTP data for storage
-	var deliveredOTPEncrypted, initiatedOTPEncrypted *string
+	var deliveryPhoneAppliedOTPEncrypted string
 
 	if otpRecord != nil {
 		// Encrypt the delivered OTP (the OTP code that was verified)
-		encryptedDeliveredOTP, err := utils.EncryptData(otpRecord.OTPCode)
+		encryptedDeliveryPhoneAppliedOTP, err := utils.EncryptData(otpRecord.OTPCode)
 		if err != nil {
 			logger.Error("Failed to encrypt delivered OTP", err)
 		} else {
-			deliveredOTPEncrypted = &encryptedDeliveredOTP
-		}
-
-		// Encrypt the initiated OTP timestamp for tracking purposes
-		encryptedInitiatedOTP, err := utils.EncryptData(otpRecord.CreatedAt.Format(time.RFC3339))
-		if err != nil {
-			logger.Error("Failed to encrypt initiated OTP timestamp", err)
-		} else {
-			initiatedOTPEncrypted = &encryptedInitiatedOTP
+			deliveryPhoneAppliedOTPEncrypted = encryptedDeliveryPhoneAppliedOTP
 		}
 	}
 
 	// Mark delivery phone as verified and store encrypted OTPs
-	booking.DeliveryPhoneVerified = true
-	booking.DeliveredOTPEncrypted = deliveredOTPEncrypted
-	booking.InitiatedOTPEncrypted = initiatedOTPEncrypted
+	booking.DeliveryPhoneAppliedVerified = true
+	booking.DeliveryPhoneAppliedOTPEncrypted = &deliveryPhoneAppliedOTPEncrypted
+	booking.Status = "pre_booked" // Update status to prebooked upon successful phone verification
+
+	// Save the updated booking
 	if err := bc.DB.Save(&booking).Error; err != nil {
 		logger.Error("Failed to update delivery phone verification status", err)
 		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
@@ -332,12 +415,30 @@ func (bc *BookingController) VerifyDeliveryPhone(c *fiber.Ctx) error {
 		})
 	}
 
+	// Send delivery confirmation SMS
+	otpSvcForSMS := otpService.NewOTPService(bc.DB)
+	var smsError string
+	if err := otpSvcForSMS.SMSService.SendDeliveryNotification(req.Phone, fmt.Sprintf("%d", booking.ID)); err != nil {
+		// Log error but don't fail the verification
+		logger.Error("Failed to send delivery notification SMS", err)
+		smsError = err.Error()
+	}
+
 	logger.Success(fmt.Sprintf("Delivery phone verified for booking ID: %d", booking.ID))
+
+	responseData := map[string]interface{}{
+		"booking":  booking,
+		"verified": true,
+	}
+
+	if smsError != "" {
+		responseData["sms_notification_error"] = smsError
+	}
 
 	return c.Status(fiber.StatusOK).JSON(types.ApiResponse{
 		Status:  fiber.StatusOK,
 		Message: "Delivery phone verified successfully",
-		Data:    booking,
+		Data:    responseData,
 	})
 }
 
@@ -349,6 +450,24 @@ func (bc *BookingController) GetOTPRetryInfo(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(types.ApiResponse{
 			Status:  fiber.StatusBadRequest,
 			Message: "Invalid request body",
+			Data:    nil,
+		})
+	}
+
+	// Validate request using the validation method from types
+	if err := req.Validate(); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: err.Error(),
+			Data:    nil,
+		})
+	}
+
+	// Basic check for phone number presence
+	if req.Phone == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "phone is required",
 			Data:    nil,
 		})
 	}
@@ -383,6 +502,14 @@ func (bc *BookingController) ResendOTP(c *fiber.Ctx) error {
 			Data:    nil,
 		})
 	}
+	// Validate request using the validation method from types
+	if err := req.Validate(); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: err.Error(),
+			Data:    nil,
+		})
+	}
 
 	// Find the booking to verify the phone number
 	var booking bookingModel.Booking
@@ -412,7 +539,7 @@ func (bc *BookingController) ResendOTP(c *fiber.Ctx) error {
 	}
 
 	// Check if already verified
-	if booking.DeliveryPhoneVerified {
+	if booking.DeliveryPhoneAppliedVerified {
 		return c.Status(fiber.StatusBadRequest).JSON(types.ApiResponse{
 			Status:  fiber.StatusBadRequest,
 			Message: "Delivery phone is already verified",
@@ -422,7 +549,7 @@ func (bc *BookingController) ResendOTP(c *fiber.Ctx) error {
 
 	// Send OTP using OTP service (with retry handling)
 	otpSvc := otpService.NewOTPService(bc.DB)
-	otpRecord, err := otpSvc.SendOTP(req.Phone, otp.OTPPurposeDeliveryApplyPhone)
+	otpRecord, err := otpSvc.SendOTPWithBookingID(req.Phone, otp.OTPPurposeDeliveryApplyPhone, &req.BookingID)
 	if err != nil {
 		logger.Error("Failed to send OTP", err)
 
