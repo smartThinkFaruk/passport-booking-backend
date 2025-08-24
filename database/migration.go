@@ -82,9 +82,11 @@ func getRegisteredModels() []ModelInfo {
 		&user.User{},
 		&address.Address{},
 		&booking.Booking{},
+		&booking.BookingEvent{},
 
 		// OTP models
 		&otp.OTP{},
+		&otp.OTPEvent{},
 
 		// Log models
 		&log.Log{},

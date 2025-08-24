@@ -6,6 +6,7 @@ import (
 	"math/big"
 	"passport-booking/httpServices/sms"
 	"passport-booking/models/otp"
+	"passport-booking/services/otp_event"
 	"time"
 
 	"gorm.io/gorm"
@@ -76,6 +77,12 @@ func (s *Service) SendOTPWithBookingID(phone string, purpose otp.OTPPurpose, boo
 		if err := s.DB.Save(existingOTP).Error; err != nil {
 			// Log error but continue
 			fmt.Printf("Failed to mark expired OTP as used: %v\n", err)
+		} else {
+			// Store OTP expired cleanup event
+			if err := otp_event.SnapshotOTPToEvent(s.DB, existingOTP, "expired_cleanup"); err != nil {
+				// Log error but continue
+				fmt.Printf("Failed to store OTP expired cleanup event: %v\n", err)
+			}
 		}
 	}
 
@@ -122,6 +129,12 @@ func (s *Service) SendOTPWithBookingID(phone string, purpose otp.OTPPurpose, boo
 
 	if err := s.DB.Create(newOTP).Error; err != nil {
 		return nil, fmt.Errorf("failed to create OTP record: %w", err)
+	}
+
+	// Store OTP creation event
+	if err := otp_event.SnapshotOTPToEvent(s.DB, newOTP, "created"); err != nil {
+		// Log error but don't fail the OTP creation
+		fmt.Printf("Failed to store OTP creation event for %s: %v\n", phone, err)
 	}
 
 	// Send OTP via SMS
@@ -175,6 +188,16 @@ func (s *Service) VerifyOTP(phone, otpCode string, purpose otp.OTPPurpose) (bool
 			return false, fmt.Errorf("failed to update retry count: %w", err)
 		}
 
+		// Store OTP failed verification event
+		eventType := "verification_failed"
+		if otpRecord.IsCurrentlyBlocked() {
+			eventType = "blocked_max_retries"
+		}
+		if err := otp_event.SnapshotOTPToEvent(s.DB, &otpRecord, eventType); err != nil {
+			// Log error but don't fail the verification
+			fmt.Printf("Failed to store OTP verification failed event for %s: %v\n", phone, err)
+		}
+
 		remainingAttempts := otpRecord.MaxRetries - otpRecord.RetryCount
 		if remainingAttempts <= 0 {
 			return false, fmt.Errorf("invalid OTP. Maximum attempts exceeded. OTP is now blocked")
@@ -186,6 +209,12 @@ func (s *Service) VerifyOTP(phone, otpCode string, purpose otp.OTPPurpose) (bool
 	otpRecord.IsUsed = true
 	if err := s.DB.Save(&otpRecord).Error; err != nil {
 		return false, fmt.Errorf("failed to mark OTP as used: %w", err)
+	}
+
+	// Store OTP successful verification event
+	if err := otp_event.SnapshotOTPToEvent(s.DB, &otpRecord, "verified_success"); err != nil {
+		// Log error but don't fail the verification
+		fmt.Printf("Failed to store OTP verification success event for %s: %v\n", phone, err)
 	}
 
 	return true, nil
@@ -229,6 +258,16 @@ func (s *Service) VerifyOTPWithDetails(phone, otpCode string, purpose otp.OTPPur
 			return false, &otpRecord, fmt.Errorf("failed to update retry count: %w", err)
 		}
 
+		// Store OTP failed verification event
+		eventType := "verification_failed"
+		if otpRecord.IsCurrentlyBlocked() {
+			eventType = "blocked_max_retries"
+		}
+		if err := otp_event.SnapshotOTPToEvent(s.DB, &otpRecord, eventType); err != nil {
+			// Log error but don't fail the verification
+			fmt.Printf("Failed to store OTP verification failed event for %s: %v\n", phone, err)
+		}
+
 		remainingAttempts := otpRecord.MaxRetries - otpRecord.RetryCount
 		if remainingAttempts <= 0 {
 			return false, &otpRecord, fmt.Errorf("invalid OTP. Maximum attempts exceeded. OTP is now blocked")
@@ -242,11 +281,33 @@ func (s *Service) VerifyOTPWithDetails(phone, otpCode string, purpose otp.OTPPur
 		return false, &otpRecord, fmt.Errorf("failed to mark OTP as used: %w", err)
 	}
 
+	// Store OTP successful verification event
+	if err := otp_event.SnapshotOTPToEvent(s.DB, &otpRecord, "verified_success"); err != nil {
+		// Log error but don't fail the verification
+		fmt.Printf("Failed to store OTP verification success event for %s: %v\n", phone, err)
+	}
+
 	return true, &otpRecord, nil
 }
 
 // CleanupExpiredOTPs removes expired OTP records from the database
 func (s *Service) CleanupExpiredOTPs() error {
+	// First, get all expired OTPs to store events before deletion
+	var expiredOTPs []otp.OTP
+	err := s.DB.Where("expires_at < ?", time.Now()).Find(&expiredOTPs).Error
+	if err != nil {
+		return err
+	}
+
+	// Store expiration events for all expired OTPs
+	for _, expiredOTP := range expiredOTPs {
+		if err := otp_event.SnapshotOTPToEvent(s.DB, &expiredOTP, "expired"); err != nil {
+			// Log error but continue with cleanup
+			fmt.Printf("Failed to store OTP expiration event for OTP ID %d: %v\n", expiredOTP.ID, err)
+		}
+	}
+
+	// Now delete the expired OTPs
 	return s.DB.Where("expires_at < ?", time.Now()).Delete(&otp.OTP{}).Error
 }
 
@@ -340,6 +401,12 @@ func (s *Service) UnblockOTP(phone string, purpose otp.OTPPurpose) error {
 		return fmt.Errorf("failed to unblock OTP: %w", err)
 	}
 
+	// Store OTP unblock event
+	if err := otp_event.SnapshotOTPToEvent(s.DB, &otpRecord, "manually_unblocked"); err != nil {
+		// Log error but don't fail the unblock operation
+		fmt.Printf("Failed to store OTP unblock event for %s: %v\n", phone, err)
+	}
+
 	return nil
 }
 
@@ -362,6 +429,13 @@ func (s *Service) CleanupExpiredBlocks() error {
 		if err := s.DB.Save(&otpRecord).Error; err != nil {
 			// Log error but continue with other records
 			fmt.Printf("Failed to reset expired block for OTP ID %d: %v\n", otpRecord.ID, err)
+			continue
+		}
+
+		// Store OTP auto-unblock event
+		if err := otp_event.SnapshotOTPToEvent(s.DB, &otpRecord, "auto_unblocked"); err != nil {
+			// Log error but continue with other records
+			fmt.Printf("Failed to store OTP auto-unblock event for OTP ID %d: %v\n", otpRecord.ID, err)
 		}
 	}
 
