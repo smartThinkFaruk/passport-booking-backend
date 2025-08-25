@@ -10,6 +10,7 @@ import (
 	"os"
 	"passport-booking/database"
 	"passport-booking/models/user"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -262,4 +263,21 @@ func GetServiceCost(serviceName string, weight int, additionalService string, tr
 	}
 
 	return cost, nil
+}
+
+// ValidatePhoneNumber validates phone number using the specified regex pattern
+// Pattern: /^(?:\+88)?01[0-9]{9}$/
+// Allows: 01xxxxxxxxx or +8801xxxxxxxxx (where x is any digit 0-9)
+func ValidatePhoneNumber(phone string) bool {
+	// Remove any whitespace
+	phone = strings.TrimSpace(phone)
+
+	// Define the regex pattern
+	pattern := `^(?:\+88)?01[0-9]{9}$`
+
+	// Compile the regular expression
+	re := regexp.MustCompile(pattern)
+
+	// Check if the phone matches the pattern
+	return re.MatchString(phone)
 }

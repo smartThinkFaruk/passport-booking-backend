@@ -1,11 +1,14 @@
 package booking
 
-import "fmt"
+import (
+	"fmt"
+	"passport-booking/utils"
+)
 
 // VerifyDeliveryPhoneRequest represents the request for verifying delivery phone for a booking
 type VerifyDeliveryPhoneRequest struct {
 	BookingID uint   `json:"booking_id" validate:"required"`
-	Phone     string `json:"phone" validate:"required,min=10,max=20"`
+	Phone     string `json:"phone" validate:"required,phone"`
 	OTPCode   string `json:"otp_code" validate:"required,len=6"`
 }
 
@@ -16,11 +19,8 @@ func (r *VerifyDeliveryPhoneRequest) Validate() error {
 	if r.Phone == "" {
 		return fmt.Errorf("phone is required")
 	}
-	if len(r.Phone) < 10 {
-		return fmt.Errorf("phone must be at least 10 characters")
-	}
-	if len(r.Phone) > 20 {
-		return fmt.Errorf("phone must not exceed 20 characters")
+	if !utils.ValidatePhoneNumber(r.Phone) {
+		return fmt.Errorf("phone number is invalid")
 	}
 	if r.OTPCode == "" {
 		return fmt.Errorf("otp_code is required")
@@ -34,7 +34,7 @@ func (r *VerifyDeliveryPhoneRequest) Validate() error {
 // UpdateDeliveryPhoneRequest represents the request for updating delivery phone
 type UpdateDeliveryPhoneRequest struct {
 	BookingID     uint   `json:"booking_id" validate:"required"`
-	DeliveryPhone string `json:"delivery_phone" validate:"required,min=10,max=20"`
+	DeliveryPhone string `json:"delivery_phone" validate:"required,phone"`
 }
 
 // Validate validates the UpdateDeliveryPhoneRequest fields
@@ -45,28 +45,23 @@ func (r *UpdateDeliveryPhoneRequest) Validate() error {
 	if r.DeliveryPhone == "" {
 		return fmt.Errorf("delivery_phone is required")
 	}
-	if len(r.DeliveryPhone) < 10 {
-		return fmt.Errorf("delivery_phone must be at least 10 characters")
-	}
-	if len(r.DeliveryPhone) > 20 {
-		return fmt.Errorf("delivery_phone must not exceed 20 characters")
+	if !utils.ValidatePhoneNumber(r.DeliveryPhone) {
+		return fmt.Errorf("delivery_phone number is invalid")
 	}
 	return nil
 }
 
 // GetOTPRetryInfoRequest represents the request for getting OTP retry information
 type GetOTPRetryInfoRequest struct {
-	Phone string `json:"phone" validate:"required,min=10,max=20"`
+	Phone string `json:"phone" validate:"required,phone"`
 }
+
 func (r *GetOTPRetryInfoRequest) Validate() error {
 	if r.Phone == "" {
 		return fmt.Errorf("phone is required")
 	}
-	if len(r.Phone) < 10 {
-		return fmt.Errorf("phone must be at least 10 characters")
-	}
-	if len(r.Phone) > 20 {
-		return fmt.Errorf("phone must not exceed 20 characters")
+	if !utils.ValidatePhoneNumber(r.Phone) {
+		return fmt.Errorf("phone number is invalid")
 	}
 	return nil
 }
@@ -74,7 +69,7 @@ func (r *GetOTPRetryInfoRequest) Validate() error {
 // ResendOTPRequest represents the request for resending OTP
 type ResendOTPRequest struct {
 	BookingID uint   `json:"booking_id" validate:"required"`
-	Phone     string `json:"phone" validate:"required,min=10,max=20"`
+	Phone     string `json:"phone" validate:"required,phone"`
 }
 
 func (r *ResendOTPRequest) Validate() error {
@@ -84,11 +79,8 @@ func (r *ResendOTPRequest) Validate() error {
 	if r.Phone == "" {
 		return fmt.Errorf("phone is required")
 	}
-	if len(r.Phone) < 10 {
-		return fmt.Errorf("phone must be at least 10 characters")
-	}
-	if len(r.Phone) > 20 {
-		return fmt.Errorf("phone must not exceed 20 characters")
+	if !utils.ValidatePhoneNumber(r.Phone) {
+		return fmt.Errorf("phone number is invalid")
 	}
 	return nil
 }
@@ -96,7 +88,7 @@ func (r *ResendOTPRequest) Validate() error {
 // SendOTPForBookingRequest represents the request for sending OTP for a booking
 type SendOTPForBookingRequest struct {
 	BookingID uint   `json:"booking_id" validate:"required"`
-	Phone     string `json:"phone" validate:"required,min=10,max=20"`
+	Phone     string `json:"phone" validate:"required,phone"`
 }
 
 func (r *SendOTPForBookingRequest) Validate() error {
@@ -106,11 +98,8 @@ func (r *SendOTPForBookingRequest) Validate() error {
 	if r.Phone == "" {
 		return fmt.Errorf("phone is required")
 	}
-	if len(r.Phone) < 10 {
-		return fmt.Errorf("phone must be at least 10 characters")
-	}
-	if len(r.Phone) > 20 {
-		return fmt.Errorf("phone must not exceed 20 characters")
+	if !utils.ValidatePhoneNumber(r.Phone) {
+		return fmt.Errorf("phone number is invalid")
 	}
 	return nil
 }
@@ -118,7 +107,7 @@ func (r *SendOTPForBookingRequest) Validate() error {
 // VerifyOTPForBookingRequest represents the request for verifying OTP for a booking
 type VerifyOTPForBookingRequest struct {
 	BookingID uint   `json:"booking_id" validate:"required"`
-	Phone     string `json:"phone" validate:"required,min=10,max=20"`
+	Phone     string `json:"phone" validate:"required,phone"`
 	OTPCode   string `json:"otp_code" validate:"required,len=6"`
 }
 
@@ -129,11 +118,8 @@ func (r *VerifyOTPForBookingRequest) Validate() error {
 	if r.Phone == "" {
 		return fmt.Errorf("phone is required")
 	}
-	if len(r.Phone) < 10 {
-		return fmt.Errorf("phone must be at least 10 characters")
-	}
-	if len(r.Phone) > 20 {
-		return fmt.Errorf("phone must not exceed 20 characters")
+	if !utils.ValidatePhoneNumber(r.Phone) {
+		return fmt.Errorf("phone number is invalid")
 	}
 	if r.OTPCode == "" {
 		return fmt.Errorf("otp_code is required")
@@ -147,7 +133,7 @@ func (r *VerifyOTPForBookingRequest) Validate() error {
 // GetBookingOTPStatusRequest represents the request for getting OTP status for a booking
 type GetBookingOTPStatusRequest struct {
 	BookingID uint   `json:"booking_id" validate:"required"`
-	Phone     string `json:"phone" validate:"required,min=10,max=20"`
+	Phone     string `json:"phone" validate:"required,phone"`
 }
 
 func (r *GetBookingOTPStatusRequest) Validate() error {
@@ -157,11 +143,8 @@ func (r *GetBookingOTPStatusRequest) Validate() error {
 	if r.Phone == "" {
 		return fmt.Errorf("phone is required")
 	}
-	if len(r.Phone) < 10 {
-		return fmt.Errorf("phone must be at least 10 characters")
-	}
-	if len(r.Phone) > 20 {
-		return fmt.Errorf("phone must not exceed 20 characters")
+	if !utils.ValidatePhoneNumber(r.Phone) {
+		return fmt.Errorf("phone number is invalid")
 	}
 	return nil
 }

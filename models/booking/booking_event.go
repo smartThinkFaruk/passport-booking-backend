@@ -23,7 +23,7 @@ type BookingEvent struct {
 	MotherName   string  `gorm:"type:varchar(255);not null" json:"mother_name"`
 	Phone        string  `gorm:"type:varchar(20);not null" json:"phone"`
 
-	ReceiverName *string `gorm:"type:varchar(255)" json:"receiver_name,omitempty"`
+	ReceiverName  *string `gorm:"type:varchar(255)" json:"receiver_name,omitempty"`
 	DeliveryPhone *string `gorm:"type:varchar(20)" json:"delivery_phone"`
 
 	// keep field names consistent with Booking
@@ -35,9 +35,11 @@ type BookingEvent struct {
 	Address               string  `gorm:"type:text;not null" json:"address"`
 	EmergencyContactName  *string `gorm:"type:varchar(255)" json:"emergency_contact_name,omitempty"`
 	EmergencyContactPhone *string `gorm:"type:varchar(20)" json:"emergency_contact_phone,omitempty"`
+	DeliveryBranchCode	*string `gorm:"type:varchar(100)" json:"delivery_branch_code,omitempty"`
+	// Foreign key for address relationship - nullable for two-step booking process
 
-	AddressID   uint            `gorm:"not null" json:"address_id"`
-	AddressInfo address.Address `gorm:"foreignKey:AddressID" json:"address_info"`
+	AddressID   *uint            `gorm:"" json:"address_id,omitempty"`
+	AddressInfo *address.Address `gorm:"foreignKey:AddressID" json:"address_info,omitempty"`
 
 	Status      BookingStatus `gorm:"size:20;not null;default:initial" json:"status"`
 	BookingDate time.Time     `gorm:"" json:"booking_date"`

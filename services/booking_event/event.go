@@ -35,6 +35,7 @@ func SnapshotBookingToEvent(tx *gorm.DB, b *bookingModel.Booking, eventType stri
 		Address:               b.Address,
 		EmergencyContactName:  b.EmergencyContactName,
 		EmergencyContactPhone: b.EmergencyContactPhone,
+		DeliveryBranchCode:	b.DeliveryBranchCode,
 
 		AddressID:   b.AddressID,
 		AddressInfo: b.AddressInfo,
