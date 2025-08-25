@@ -462,3 +462,60 @@ func strPtrToStr(s *string) string {
 	}
 	return ""
 }
+
+// Helper function Ends here
+
+func CloseBag(c *fiber.Ctx) error {
+	var reqBody bagType.CloseBagRequest
+
+	authHeader := c.Get("Authorization")
+	if authHeader == "" {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": "Authorization header is required",
+		})
+	}
+
+	if err := c.BodyParser(&reqBody); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid request body",
+		})
+	}
+
+	// Prepare payload using data from request
+	payload := map[string]interface{}{
+		"bag_id": reqBody.BagID,
+	}
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to marshal payload"})
+	}
+
+	baseURL := os.Getenv("DMS_BASE_URL")
+	if baseURL == "" {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "DMS_BASE_URL not set in environment"})
+	}
+
+	url := fmt.Sprintf("%s/rms/close-bag/", baseURL)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create request"})
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeader)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": "Failed to call external API"})
+	}
+	defer resp.Body.Close()
+
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to read response"})
+	}
+
+	return c.Status(resp.StatusCode).Send(body)
+}

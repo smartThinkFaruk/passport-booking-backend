@@ -48,6 +48,7 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	bagGroup.Post("/branch-mapping", middleware.RequirePermissions(constants.PermSuperAdminFull), bag.CreateBranchMapping)
 	bagGroup.Post("/create", middleware.RequirePermissions(constants.PermOperatorFull), bag.CreateBag)
 	bagGroup.Post("/item_add", middleware.RequirePermissions(constants.PermOperatorFull), bag.AddItemToBag)
+	bagGroup.Post("/close", middleware.RequirePermissions(constants.PermOperatorFull), bag.CloseBag)
 
 	/*=============================================================================
 	| Protected Routes

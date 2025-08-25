@@ -71,3 +71,7 @@ type Booking struct {
 	AppOrOrderID string `gorm:"column:app_or_order_id"`
 	// Add other fields as needed
 }
+
+type CloseBagRequest struct {
+	BagID string `json:"bag_id"`
+}
