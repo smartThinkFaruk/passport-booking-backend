@@ -442,6 +442,72 @@ func (s *Service) CleanupExpiredBlocks() error {
 	return nil
 }
 
+// ResendOTPWithBookingID resends OTP by updating existing unused OTP record or creating new one
+func (s *Service) ResendOTPWithBookingID(phone string, purpose otp.OTPPurpose, bookingID *uint) (*otp.OTP, error) {
+	// Ensure we have a valid booking ID
+	if bookingID == nil {
+		return nil, fmt.Errorf("booking ID is required for OTP generation")
+	}
+
+	// Find existing unused OTP for this booking and phone
+	var existingOTP otp.OTP
+	err := s.DB.Where("booking_id = ? AND phone = ? AND purpose = ? AND is_used = false",
+		*bookingID, phone, purpose).
+		Order("created_at DESC").
+		First(&existingOTP).Error
+
+	if err != nil && err != gorm.ErrRecordNotFound {
+		return nil, fmt.Errorf("failed to check existing OTP: %w", err)
+	}
+
+	// If we found an existing unused OTP, update it instead of creating a new one
+	if err != gorm.ErrRecordNotFound {
+		// Check if user is blocked due to too many attempts
+		if existingOTP.IsCurrentlyBlocked() {
+			blockTime := "permanently"
+			if existingOTP.BlockedUntil != nil {
+				blockTime = fmt.Sprintf("until %s", existingOTP.BlockedUntil.Format("15:04:05"))
+			}
+			return nil, fmt.Errorf("OTP requests are blocked %s due to too many failed attempts", blockTime)
+		}
+
+		// Generate new OTP code
+		otpCode, err := s.GenerateOTP()
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate OTP: %w", err)
+		}
+
+		// Update existing OTP with new code and expiration time
+		existingOTP.OTPCode = otpCode
+		existingOTP.ExpiresAt = time.Now().Add(5 * time.Minute) // 5 minutes expiry
+		existingOTP.UpdatedAt = time.Now()
+
+		if err := s.DB.Save(&existingOTP).Error; err != nil {
+			return nil, fmt.Errorf("failed to update existing OTP record: %w", err)
+		}
+
+		// Store OTP resend event
+		if err := otp_event.SnapshotOTPToEvent(s.DB, &existingOTP, "resent"); err != nil {
+			// Log error but don't fail the OTP resend
+			fmt.Printf("Failed to store OTP resend event for %s: %v\n", phone, err)
+		}
+
+		// Send OTP via SMS
+		if err := s.SMSService.SendOTP(phone, otpCode); err != nil {
+			// Log the error but don't fail the OTP resend
+			fmt.Printf("Failed to send OTP SMS to %s: %v\n", phone, err)
+			fmt.Printf("Resent OTP for %s: %s (Purpose: %s) - SMS delivery failed, showing for testing\n", phone, otpCode, purpose)
+		} else {
+			fmt.Printf("Resent OTP via SMS to %s (Purpose: %s)\n", phone, purpose)
+		}
+
+		return &existingOTP, nil
+	}
+
+	// No existing unused OTP found, create a new one using the existing method
+	return s.SendOTPWithBookingID(phone, purpose, bookingID)
+}
+
 // OTPRetryInfo contains information about OTP retry status
 type OTPRetryInfo struct {
 	CanRequestNewOTP bool       `json:"can_request_new_otp"`

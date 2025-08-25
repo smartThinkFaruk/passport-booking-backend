@@ -480,7 +480,7 @@ func (bc *BookingController) UpdateDeliveryPhone(c *fiber.Ctx) error {
 
 	// Send OTP to the new delivery phone
 	otpSvc := otpService.NewOTPService(bc.DB)
-	otpRecord, err := otpSvc.SendOTPWithBookingID(req.DeliveryPhone, otp.OTPPurposeDeliveryApplyPhone, &req.BookingID)
+	otpRecord, err := otpSvc.SendOTPWithBookingID(req.DeliveryPhone, req.Purpose, &req.BookingID)
 	if err != nil {
 		logger.Error("Failed to send OTP to delivery phone", err)
 
@@ -585,7 +585,7 @@ func (bc *BookingController) VerifyDeliveryPhone(c *fiber.Ctx) error {
 
 	// Verify OTP using OTP service
 	otpSvc := otpService.NewOTPService(bc.DB)
-	isValid, otpRecord, err := otpSvc.VerifyOTPWithDetails(req.Phone, req.OTPCode, otp.OTPPurposeDeliveryApplyPhone)
+	isValid, otpRecord, err := otpSvc.VerifyOTPWithDetails(req.Phone, req.OTPCode, req.Purpose)
 	if err != nil {
 		logger.Error("Failed to verify OTP", err)
 
@@ -723,18 +723,45 @@ func (bc *BookingController) GetOTPRetryInfo(c *fiber.Ctx) error {
 		})
 	}
 
-	// Basic check for phone number presence
-	if req.Phone == "" {
-		return bc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
-			Status:  fiber.StatusBadRequest,
-			Message: "phone is required",
+	// Find the booking to validate booking_id and phone match
+	var booking bookingModel.Booking
+	if err := bc.DB.First(&booking, req.BookingID).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return bc.sendResponseWithLog(c, fiber.StatusNotFound, types.ApiResponse{
+				Status:  fiber.StatusNotFound,
+				Message: "Booking not found",
+				Data:    nil,
+			})
+		}
+		logger.Error("Failed to find booking", err)
+		return bc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Internal server error",
 			Data:    nil,
 		})
 	}
 
-	// Get retry information from OTP service
+	// Check if delivery phone exists in the booking
+	if booking.DeliveryPhone == nil {
+		return bc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "No delivery phone found for this booking",
+			Data:    nil,
+		})
+	}
+
+	// Verify that the provided phone matches the booking's delivery phone
+	if *booking.DeliveryPhone != req.Phone {
+		return bc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Phone number does not match booking delivery phone",
+			Data:    nil,
+		})
+	}
+
+	// Get retry information from OTP service with the specified purpose
 	otpSvc := otpService.NewOTPService(bc.DB)
-	retryInfo, err := otpSvc.GetOTPRetryInfo(req.Phone, otp.OTPPurposeDeliveryConfirmPhone)
+	retryInfo, err := otpSvc.GetOTPRetryInfo(req.Phone, req.Purpose)
 	if err != nil {
 		logger.Error("Failed to get OTP retry info", err)
 		return bc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
@@ -747,7 +774,12 @@ func (bc *BookingController) GetOTPRetryInfo(c *fiber.Ctx) error {
 	return bc.sendResponseWithLog(c, fiber.StatusOK, types.ApiResponse{
 		Status:  fiber.StatusOK,
 		Message: "OTP retry information retrieved successfully",
-		Data:    retryInfo,
+		Data: map[string]interface{}{
+			"retry_info": retryInfo,
+			"phone":      req.Phone,
+			"purpose":    req.Purpose,
+			"booking_id": req.BookingID,
+		},
 	})
 }
 
@@ -789,27 +821,41 @@ func (bc *BookingController) ResendOTP(c *fiber.Ctx) error {
 		})
 	}
 
-	// Check if the phone matches the booking's delivery phone
-	if booking.DeliveryPhone == nil || *booking.DeliveryPhone != req.Phone {
-		return bc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
-			Status:  fiber.StatusBadRequest,
-			Message: "Phone number does not match booking delivery phone",
-			Data:    nil,
-		})
+	// Validate based on the OTP purpose
+	switch req.Purpose {
+	case otp.OTPPurposeDeliveryApplyPhone:
+		// For apply purpose, we might be setting a new delivery phone
+		// The phone doesn't need to match the current delivery phone yet
+		if booking.DeliveryPhone != nil && *booking.DeliveryPhone != req.Phone {
+			// If delivery phone is already set, it should match
+			return bc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+				Status:  fiber.StatusBadRequest,
+				Message: "Phone number does not match booking delivery phone",
+				Data:    nil,
+			})
+		}
+	case otp.OTPPurposeDeliveryConfirmPhone:
+		// For confirm purpose, the phone must match the booking's delivery phone
+		if booking.DeliveryPhone == nil || *booking.DeliveryPhone != req.Phone {
+			return bc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+				Status:  fiber.StatusBadRequest,
+				Message: "Phone number does not match booking delivery phone",
+				Data:    nil,
+			})
+		}
+		// Check if already verified for confirm purpose
+		if booking.DeliveryPhoneAppliedVerified {
+			return bc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+				Status:  fiber.StatusBadRequest,
+				Message: "Delivery phone is already verified",
+				Data:    nil,
+			})
+		}
 	}
 
-	// Check if already verified
-	if booking.DeliveryPhoneAppliedVerified {
-		return bc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
-			Status:  fiber.StatusBadRequest,
-			Message: "Delivery phone is already verified",
-			Data:    nil,
-		})
-	}
-
-	// Send OTP using OTP service (with retry handling)
+	// Resend OTP using OTP service (will update existing unused OTP or create new one)
 	otpSvc := otpService.NewOTPService(bc.DB)
-	otpRecord, err := otpSvc.SendOTPWithBookingID(req.Phone, otp.OTPPurposeDeliveryApplyPhone, &req.BookingID)
+	otpRecord, err := otpSvc.ResendOTPWithBookingID(req.Phone, req.Purpose, &req.BookingID)
 	if err != nil {
 		logger.Error("Failed to send OTP", err)
 
@@ -831,15 +877,16 @@ func (bc *BookingController) ResendOTP(c *fiber.Ctx) error {
 		})
 	}
 
-	logger.Success(fmt.Sprintf("OTP sent to phone %s for booking ID: %d", req.Phone, req.BookingID))
+	logger.Success(fmt.Sprintf("OTP resent to phone %s for booking ID: %d with purpose: %s", req.Phone, req.BookingID, req.Purpose))
 
 	return bc.sendResponseWithLog(c, fiber.StatusOK, types.ApiResponse{
 		Status:  fiber.StatusOK,
-		Message: "OTP sent successfully",
+		Message: "OTP resent successfully",
 		Data: map[string]interface{}{
 			"otp_id":     otpRecord.ID,
 			"expires_at": otpRecord.ExpiresAt,
 			"phone":      req.Phone,
+			"purpose":    req.Purpose,
 		},
 	})
 }

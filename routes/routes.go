@@ -5,7 +5,6 @@ import (
 	"passport-booking/constants"
 	"passport-booking/controllers/auth"
 	"passport-booking/controllers/booking"
-	"passport-booking/controllers/otp"
 	"passport-booking/controllers/user"
 	httpServices "passport-booking/httpServices/sso"
 	"passport-booking/logger"
@@ -20,7 +19,6 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	asyncLogger := logger.NewAsyncLogger(db)
 	authController := auth.NewAuthController(ssoClient, db, asyncLogger)
 	bookingController := booking.NewBookingController(db, asyncLogger)
-	otpController := otp.NewOTPController(db, asyncLogger)
 
 	// Start the async logger processing goroutine
 	go asyncLogger.ProcessLog()
@@ -88,26 +86,5 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	bookingGroup.Post("/resend-otp", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
 	), bookingController.ResendOTP)
-
-	// Booking-specific OTP routes (send OTP without updating phone)
-	bookingGroup.Post("/send-otp", middleware.RequirePermissions(
-		constants.PermAgentHasFull,
-	), otpController.SendOTPForBooking)
-
-	bookingGroup.Post("/verify-otp", middleware.RequirePermissions(
-		constants.PermAgentHasFull,
-	), otpController.VerifyOTPForBooking)
-
-	bookingGroup.Post("/otp-status", middleware.RequirePermissions(
-		constants.PermAgentHasFull,
-	), otpController.GetBookingOTPStatus)
-	/*=============================================================================
-	| OTP Routes
-	===============================================================================*/
-	otpGroup := api.Group("/otp")
-
-	// Public OTP routes (no authentication required for sending OTP)
-	otpGroup.Post("/send", otpController.SendOTP)
-	otpGroup.Post("/verify", otpController.VerifyOTP)
 
 }
