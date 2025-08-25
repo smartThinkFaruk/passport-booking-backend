@@ -4,6 +4,7 @@ import (
 	"os"
 	"passport-booking/constants"
 	"passport-booking/controllers/auth"
+	"passport-booking/controllers/bag"
 	"passport-booking/controllers/booking"
 	"passport-booking/controllers/user"
 	httpServices "passport-booking/httpServices/sso"
@@ -37,6 +38,18 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	api.Post("/get-service-token", authController.GetServiceToken)
 	api.Post("/login", authController.Login)
 	api.Post("/register", authController.Register)
+
+	/*=============================================================================
+	Bag api routes
+	===============================================================================*/
+	bagGroup := api.Group("/bag")
+
+	bagGroup.Get("/branch-list", middleware.RequirePermissions(constants.PermSuperAdminFull), bag.GetBranchList)
+	bagGroup.Get("/operator-list", middleware.RequirePermissions(constants.PermSuperAdminFull), bag.GetOperatorList)
+	bagGroup.Post("/branch-mapping", middleware.RequirePermissions(constants.PermSuperAdminFull), bag.CreateBranchMapping)
+	bagGroup.Post("/create", middleware.RequirePermissions(constants.PermOperatorFull), bag.CreateBag)
+	bagGroup.Post("/item_add", middleware.RequirePermissions(constants.PermOperatorFull), bag.AddItemToBag)
+	bagGroup.Post("/close", middleware.RequirePermissions(constants.PermOperatorFull), bag.CloseBag)
 
 	/*=============================================================================
 	| Protected Routes

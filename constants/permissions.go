@@ -3,11 +3,12 @@ package constants
 // Organization permissions
 const (
 	// Admin permissions
+	PermSuperAdminFull    = "passport-booking.super-admin.full-permit"
 	PermEkdakDPMGFull     = "ekdak.dpmg.full-permit"
 	PermPassportDPMGFull  = "passport-booking.dpmg.full-permit"
 	PermPostOfficeFull    = "passport-booking.post-master.full-permit"
 	PermOrgSupervisorFull = "passport-booking.supervisor.full-permit"
-	PermOperatorHasFull   = "passport-booking.operator.has-full-permit"
+	PermOperatorFull      = "passport-booking.operator.full-permit"
 	PermAgentHasFull      = "passport-booking.agent.full-permit"
 	PermPostmanFull       = "passport-booking.postman.has-full-permit"
 
