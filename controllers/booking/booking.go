@@ -58,8 +58,112 @@ func (bc *BookingController) sendResponseWithLog(c *fiber.Ctx, status int, respo
 }
 
 func (bc *BookingController) Index(c *fiber.Ctx) error {
+	// Parse query parameters
+	var req bookingTypes.BookingIndexRequest
+	if err := c.QueryParser(&req); err != nil {
+		logger.Error("Failed to parse query parameters", err)
+		return bc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Invalid query parameters",
+			Data:    nil,
+		})
+	}
+
+	// Validate request
+	if err := req.Validate(); err != nil {
+		return bc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: err.Error(),
+			Data:    nil,
+		})
+	}
+
+	// Get user authentication information
+	claims, ok := c.Locals("user").(map[string]interface{})
+	if !ok {
+		return bc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Message: "Invalid user claims",
+			Status:  fiber.StatusUnauthorized,
+			Data:    nil,
+		})
+	}
+
+	userUUID, ok := claims["uuid"].(string)
+	if !ok || userUUID == "" {
+		return bc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Message: "User UUID not found in token",
+			Status:  fiber.StatusUnauthorized,
+			Data:    nil,
+		})
+	}
+
+	userInfo, err := utils.GetUserByUUID(userUUID)
+	if err != nil {
+		logger.Error("Error finding user by UUID", err)
+		status := fiber.StatusInternalServerError
+		msg := "Database error"
+		if err.Error() == "user not found" {
+			status = fiber.StatusUnauthorized
+			msg = "User not found"
+		}
+		return bc.sendResponseWithLog(c, status, types.ApiResponse{
+			Message: msg,
+			Status:  status,
+			Data:    nil,
+		})
+	}
+
+	userID := uint(userInfo.ID)
+
+	// Build query with filters and user restriction
+	query := bc.DB.Model(&bookingModel.Booking{}).Preload("User").Preload("AddressInfo").Where("user_id = ?", userID)
+
+	// Apply status filter
+	if req.Status != "" {
+		query = query.Where("status = ?", req.Status)
+	}
+
+	// Apply date range filters
+	if req.FromDate != "" {
+		fromTime, err := req.ParseFromDate()
+		if err != nil {
+			logger.Error("Failed to parse from_date", err)
+			return bc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+				Status:  fiber.StatusBadRequest,
+				Message: "Invalid from_date format",
+				Data:    nil,
+			})
+		}
+		query = query.Where("created_at >= ?", fromTime)
+	}
+
+	if req.ToDate != "" {
+		toTime, err := req.ParseToDate()
+		if err != nil {
+			logger.Error("Failed to parse to_date", err)
+			return bc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+				Status:  fiber.StatusBadRequest,
+				Message: "Invalid to_date format",
+				Data:    nil,
+			})
+		}
+		query = query.Where("created_at <= ?", toTime)
+	}
+
+	// Get total count for pagination
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		logger.Error("Failed to count bookings", err)
+		return bc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to count bookings",
+			Data:    nil,
+		})
+	}
+
+	// Apply pagination
 	var bookings []bookingModel.Booking
-	if err := bc.DB.Preload("User").Preload("AddressInfo").Find(&bookings).Error; err != nil {
+	if err := query.Offset(req.GetOffset()).Limit(req.GetLimit()).Order("created_at DESC").Find(&bookings).Error; err != nil {
 		logger.Error("Failed to fetch bookings", err)
 		return bc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
 			Status:  fiber.StatusInternalServerError,
@@ -68,10 +172,28 @@ func (bc *BookingController) Index(c *fiber.Ctx) error {
 		})
 	}
 
+	// Calculate pagination metadata
+	totalPages := int((total + int64(req.PerPage) - 1) / int64(req.PerPage))
+	hasNext := req.Page < totalPages
+	hasPrev := req.Page > 1
+
+	// Prepare response
+	response := bookingTypes.BookingIndexResponse{
+		Data: bookings,
+		Pagination: bookingTypes.PaginationResponse{
+			CurrentPage: req.Page,
+			PerPage:     req.PerPage,
+			Total:       total,
+			TotalPages:  totalPages,
+			HasNext:     hasNext,
+			HasPrev:     hasPrev,
+		},
+	}
+
 	return bc.sendResponseWithLog(c, fiber.StatusOK, types.ApiResponse{
 		Status:  fiber.StatusOK,
 		Message: "Bookings fetched successfully",
-		Data:    bookings,
+		Data:    response,
 	})
 }
 
