@@ -620,14 +620,16 @@ func CloseBag(c *fiber.Ctx) error {
 
 	authHeader := c.Get("Authorization")
 	if authHeader == "" {
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Authorization header is required",
+		return c.Status(fiber.StatusUnauthorized).JSON(types.ApiResponse{
+			Message: "Authorization header is required",
+			Status:  fiber.StatusUnauthorized,
 		})
 	}
 
 	if err := c.BodyParser(&reqBody); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid request body",
+		return c.Status(fiber.StatusBadRequest).JSON(types.ApiResponse{
+			Message: "Invalid request body",
+			Status:  fiber.StatusBadRequest,
 		})
 	}
 
@@ -638,18 +640,27 @@ func CloseBag(c *fiber.Ctx) error {
 
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to marshal payload"})
+		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+			Message: "Failed to marshal payload",
+			Status:  fiber.StatusInternalServerError,
+		})
 	}
 
 	baseURL := os.Getenv("DMS_BASE_URL")
 	if baseURL == "" {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "DMS_BASE_URL not set in environment"})
+		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+			Message: "DMS_BASE_URL not set in environment",
+			Status:  fiber.StatusInternalServerError,
+		})
 	}
 
 	url := fmt.Sprintf("%s/rms/close-bag/", baseURL)
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create request"})
+		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+			Message: "Failed to create request",
+			Status:  fiber.StatusInternalServerError,
+		})
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -658,14 +669,35 @@ func CloseBag(c *fiber.Ctx) error {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": "Failed to call external API"})
+		return c.Status(fiber.StatusBadGateway).JSON(types.ApiResponse{
+			Message: "Failed to call external API",
+			Status:  fiber.StatusBadGateway,
+		})
 	}
 	defer resp.Body.Close()
 
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to read response"})
+		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+			Message: "Failed to read response",
+			Status:  fiber.StatusInternalServerError,
+		})
 	}
 
-	return c.Status(resp.StatusCode).Send(body)
+	// Parse the response to include it in our standardized format
+	var responseData interface{}
+	if jsonErr := json.Unmarshal(body, &responseData); jsonErr == nil {
+		return c.Status(resp.StatusCode).JSON(types.ApiResponse{
+			Message: "Bag closed successfully",
+			Status:  resp.StatusCode,
+			Data:    responseData,
+		})
+	}
+
+	// If JSON parsing fails, return the raw response
+	return c.Status(resp.StatusCode).JSON(types.ApiResponse{
+		Message: "Bag closure processed",
+		Status:  resp.StatusCode,
+		Data:    string(body),
+	})
 }
