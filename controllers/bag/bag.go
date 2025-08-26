@@ -687,11 +687,32 @@ func CloseBag(c *fiber.Ctx) error {
 	// Parse the response to include it in our standardized format
 	var responseData interface{}
 	if jsonErr := json.Unmarshal(body, &responseData); jsonErr == nil {
-		return c.Status(resp.StatusCode).JSON(types.ApiResponse{
-			Message: "Bag closed successfully",
-			Status:  resp.StatusCode,
-			Data:    responseData,
-		})
+		// Check if this is a success response (2xx status codes)
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return c.Status(resp.StatusCode).JSON(types.ApiResponse{
+				Message: "Bag closed successfully",
+				Status:  resp.StatusCode,
+				Data:    responseData,
+			})
+		} else {
+			// For error responses, extract the message from the response data if available
+			var message string = "Bag closure failed"
+
+			// Try to extract message from response data
+			if respMap, ok := responseData.(map[string]interface{}); ok {
+				if respMessage, exists := respMap["message"]; exists {
+					if msgStr, ok := respMessage.(string); ok {
+						message = msgStr
+					}
+				}
+			}
+
+			return c.Status(resp.StatusCode).JSON(types.ApiResponse{
+				Message: message,
+				Status:  resp.StatusCode,
+				Data:    responseData,
+			})
+		}
 	}
 
 	// If JSON parsing fails, return the raw response
