@@ -524,6 +524,7 @@ func BookingDms(authHeader, barcode, orderID string) ([]byte, int, error) {
 	//fmt.Println(barcode)
 	// Create the booking payload with the provided structure
 	payload := bagType.BookingRequest{
+		FromNumber:      "",
 		AdPodID:         "1",
 		ArticleDesc:     "Sample Article",
 		ArticlePrice:    100,

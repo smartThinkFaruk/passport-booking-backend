@@ -23,6 +23,7 @@ type AddItemRequest struct {
 }
 
 type BookingRequest struct {
+	FromNumber      string  `json:"form_number"`
 	AdPodID         string  `json:"ad_pod_id"`
 	ArticleDesc     string  `json:"article_desc"`
 	ArticlePrice    int     `json:"article_price"`
