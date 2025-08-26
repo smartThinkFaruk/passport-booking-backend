@@ -512,17 +512,44 @@ func BookingDms(authHeader, barcode, orderID string) ([]byte, int, error) {
 		Preload("User").
 		Preload("AddressInfo").
 		Where("app_or_order_id = ?", orderID).
+		Where("status = ?", bookingModel.BookingStatusPreBooked).
 		First(&booking).Error; err != nil {
 		return nil, 0, fmt.Errorf("booking not found: %v", err)
 	}
-	//bookingJSON, err := json.Marshal(booking)
-	//if err != nil {
-	//	return nil, 0, fmt.Errorf("failed to marshal booking details: %v", err)
-	//}
-	//return bookingJSON, http.StatusOK, nil
+	//if booking blank return error
+	if booking.ID == 0 {
+		return nil, 0, fmt.Errorf("booking not found or already booked")
+	}
 
-	//fmt.Println(barcode)
-	// Create the booking payload with the provided structure
+	// Check if required data is loaded
+	if booking.User.Uuid == "" {
+		return nil, 0, fmt.Errorf("user information not found for booking")
+	}
+
+	// Initialize receiver address with safe nil checks
+	receiverAddress := bagType.Address{
+		AddressType:   "home", // default value
+		Country:       "Bangladesh",
+		District:      "",
+		Division:      "",
+		PhoneNumber:   booking.Phone,
+		PoliceStation: "",
+		PostOffice:    "",
+		StreetAddress: "",
+		UserUUID:      booking.User.Uuid,
+		Username:      booking.User.Username,
+		Zone:          "Zone 1",
+	}
+	// Safely populate address info if it exists
+	if booking.AddressInfo != nil {
+		receiverAddress.AddressType = booking.AddressInfo.AddressType
+		receiverAddress.District = strPtrToStr(booking.AddressInfo.District)
+		receiverAddress.Division = strPtrToStr(booking.AddressInfo.Division)
+		receiverAddress.PoliceStation = strPtrToStr(booking.AddressInfo.PoliceStation)
+		receiverAddress.PostOffice = strPtrToStr(booking.AddressInfo.PostOffice)
+		receiverAddress.StreetAddress = strPtrToStr(booking.AddressInfo.StreetAddress)
+	}
+
 	payload := bagType.BookingRequest{
 		FromNumber:      "",
 		AdPodID:         "1",
@@ -550,19 +577,7 @@ func BookingDms(authHeader, barcode, orderID string) ([]byte, int, error) {
 		VpService:       "N",
 		Weight:          100,
 		Width:           10,
-		Receiver: bagType.Address{
-			AddressType:   booking.AddressInfo.AddressType,
-			Country:       "Bangladesh",
-			District:      strPtrToStr(booking.AddressInfo.District),
-			Division:      strPtrToStr(booking.AddressInfo.Division),
-			PhoneNumber:   booking.Phone,
-			PoliceStation: strPtrToStr(booking.AddressInfo.PoliceStation),
-			PostOffice:    strPtrToStr(booking.AddressInfo.PostOffice),
-			StreetAddress: strPtrToStr(booking.AddressInfo.StreetAddress),
-			UserUUID:      booking.User.Uuid,
-			Username:      booking.User.Username,
-			Zone:          "Zone 1",
-		},
+		Receiver:        receiverAddress,
 		Sender: bagType.Address{
 			AddressType:   "office",
 			Country:       "Bangladesh",
