@@ -406,31 +406,49 @@ func CreateBag(c *fiber.Ctx) error {
 }
 
 func AddItemToBag(c *fiber.Ctx) error {
+	// Capture the raw request body first
+	rawRequestBody := string(c.Body())
+
 	var reqBody bagType.AddItemRequest
 
 	if err := c.BodyParser(&reqBody); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "Invalid request body",
 			Status:  fiber.StatusBadRequest,
-		})
+		}
+		c.Status(fiber.StatusBadRequest).JSON(errorResponse)
+		logRequest(c, "", rawRequestBody)
+		return nil
 	}
+
+	// Convert parsed reqBody to JSON string for logging (with actual values)
+	requestBodyBytes, _ := json.Marshal(reqBody)
+	requestBody := string(requestBodyBytes)
 
 	authHeader := c.Get("Authorization")
 	if authHeader == "" {
-		return c.Status(fiber.StatusUnauthorized).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "Authorization header is required",
 			Status:  fiber.StatusUnauthorized,
-		})
+		}
+		c.Status(fiber.StatusUnauthorized).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
 	}
 
 	db := database.DB
 	var booking bookingModel.Booking
 	err := db.Where("app_or_order_id = ?", reqBody.OrderId).First(&booking).Error
 	if err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: fmt.Sprintf("Order ID %s not found in our records", reqBody.OrderId),
 			Status:  fiber.StatusBadRequest,
-		})
+		}
+		c.Status(fiber.StatusBadRequest).JSON(errorResponse)
+		// Serialize the error response properly for logging
+		responseBytes, _ := json.Marshal(errorResponse)
+		logRequest(c, string(responseBytes), requestBody)
+		return nil
 	}
 
 	// Safely extract user ID from JWT claims
@@ -462,39 +480,53 @@ func AddItemToBag(c *fiber.Ctx) error {
 			fmt.Printf("Failed to create booking event: %v\n", err)
 		}
 		// Already booked, just add article
-		return callAddArticleAPI(c, authHeader, reqBody, strPtrToStr(booking.Barcode), os.Getenv("DMS_BASE_URL"))
+		return callAddArticleAPI(c, authHeader, reqBody, strPtrToStr(booking.Barcode), os.Getenv("DMS_BASE_URL"), requestBody)
 	}
 
 	barcode, err := getBarcodeFromAPI(authHeader)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: fmt.Sprintf("Failed to get barcode: %v", err),
 			Status:  fiber.StatusInternalServerError,
-		})
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
 	}
 
 	bookingResponse, statusCode, err := BookingDms(authHeader, barcode, reqBody.OrderId)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: fmt.Sprintf("Failed to book article: %v", err),
 			Status:  fiber.StatusInternalServerError,
-		})
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
 	}
 
 	if statusCode < 200 || statusCode >= 300 {
 		var errorResp map[string]interface{}
 		if jsonErr := json.Unmarshal(bookingResponse, &errorResp); jsonErr == nil {
-			return c.Status(statusCode).JSON(types.ApiResponse{
+			errorResponse := types.ApiResponse{
 				Message: "Booking failed",
 				Status:  statusCode,
 				Data:    errorResp,
-			})
+			}
+			c.Status(statusCode).JSON(errorResponse)
+			responseBytes, _ := json.Marshal(errorResponse)
+			logRequest(c, string(responseBytes), requestBody)
+			return nil
 		}
-		return c.Status(statusCode).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "Booking failed",
 			Status:  statusCode,
 			Data:    string(bookingResponse),
-		})
+		}
+		c.Status(statusCode).JSON(errorResponse)
+		responseBytes, _ := json.Marshal(errorResponse)
+		logRequest(c, string(responseBytes), requestBody)
+		return nil
 	}
 
 	// Update booking status to booked and save barcode
@@ -507,39 +539,51 @@ func AddItemToBag(c *fiber.Ctx) error {
 	tx := db.Begin()
 	if err := tx.Save(&booking).Error; err != nil {
 		tx.Rollback()
-		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "Failed to update booking status",
 			Status:  fiber.StatusInternalServerError,
-		})
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
 	}
 
 	// Create booking event for status change to booked and item added to bag
 	if err := booking_event.SnapshotBookingToEvent(tx, &booking, "booking_confirmed_and_item_added_to_bag", userID); err != nil {
 		tx.Rollback()
-		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "Failed to create booking event",
 			Status:  fiber.StatusInternalServerError,
-		})
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
 	}
 
 	// Commit the transaction
 	if err := tx.Commit().Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "Failed to commit booking changes",
 			Status:  fiber.StatusInternalServerError,
-		})
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
 	}
 
-	return callAddArticleAPI(c, authHeader, reqBody, barcode, os.Getenv("DMS_BASE_URL"))
+	return callAddArticleAPI(c, authHeader, reqBody, barcode, os.Getenv("DMS_BASE_URL"), requestBody)
 }
 
 // Helper function to call add-article API
-func callAddArticleAPI(c *fiber.Ctx, authHeader string, reqBody bagType.AddItemRequest, barcode, baseURL string) error {
+func callAddArticleAPI(c *fiber.Ctx, authHeader string, reqBody bagType.AddItemRequest, barcode, baseURL string, requestBody string) error {
 	if baseURL == "" {
-		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "Base URL not set in environment",
 			Status:  fiber.StatusInternalServerError,
-		})
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
 	}
 	//fmt.Println(barcode)
 	payload := map[string]interface{}{
@@ -550,54 +594,102 @@ func callAddArticleAPI(c *fiber.Ctx, authHeader string, reqBody bagType.AddItemR
 	}
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "Failed to marshal payload",
 			Status:  fiber.StatusInternalServerError,
-		})
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
 	}
 	url := fmt.Sprintf("%s/rms/bag/add-article/", baseURL)
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "Failed to create request",
 			Status:  fiber.StatusInternalServerError,
-		})
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", authHeader)
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return c.Status(fiber.StatusBadGateway).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "Failed to call external API",
 			Status:  fiber.StatusBadGateway,
-		})
+		}
+		c.Status(fiber.StatusBadGateway).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "Failed to read response",
 			Status:  fiber.StatusInternalServerError,
-		})
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
 	}
 
 	// Parse the response to include it in our standardized format
 	var responseData interface{}
 	if jsonErr := json.Unmarshal(body, &responseData); jsonErr == nil {
-		return c.Status(resp.StatusCode).JSON(types.ApiResponse{
-			Message: "Item added to bag successfully",
-			Status:  resp.StatusCode,
-			Data:    responseData,
-		})
+		// Check if this is a success response (2xx status codes)
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			successResponse := types.ApiResponse{
+				Message: "Item added to bag successfully",
+				Status:  resp.StatusCode,
+				Data:    responseData,
+			}
+			c.Status(resp.StatusCode).JSON(successResponse)
+			// Serialize the response properly for logging
+			responseBytes, _ := json.Marshal(successResponse)
+			logRequest(c, string(responseBytes), requestBody)
+			return nil
+		} else {
+			// For error responses, extract the message from the response data if available
+			var message string = "Failed to add item to bag"
+
+			// Try to extract message from response data
+			//if respMap, ok := responseData.(map[string]interface{}); ok {
+			//	if respMessage, exists := respMap["message"]; exists {
+			//		if msgStr, ok := respMessage.(string); ok {
+			//			message = msgStr
+			//		}
+			//	}
+			//}
+
+			errorResponse := types.ApiResponse{
+				Message: message,
+				Status:  resp.StatusCode,
+				Data:    responseData,
+			}
+			c.Status(resp.StatusCode).JSON(errorResponse)
+			// Serialize the response properly for logging
+			responseBytes, _ := json.Marshal(errorResponse)
+			logRequest(c, string(responseBytes), requestBody)
+			return nil
+		}
 	}
 
 	// If JSON parsing fails, return the raw response
-	return c.Status(resp.StatusCode).JSON(types.ApiResponse{
+	finalResponse := types.ApiResponse{
 		Message: "Item addition processed",
 		Status:  resp.StatusCode,
 		Data:    string(body),
-	})
+	}
+	c.Status(resp.StatusCode).JSON(finalResponse)
+	// Serialize the response properly for logging
+	responseBytes, _ := json.Marshal(finalResponse)
+	logRequest(c, string(responseBytes), requestBody)
+	return nil
 }
 
 func getBarcodeFromAPI(authHeader string) (string, error) {
@@ -782,22 +874,35 @@ func strPtrToStr(s *string) string {
 // Helper function Ends here
 
 func CloseBag(c *fiber.Ctx) error {
+	// Capture the raw request body first
+	rawRequestBody := string(c.Body())
+
 	var reqBody bagType.CloseBagRequest
 
 	authHeader := c.Get("Authorization")
 	if authHeader == "" {
-		return c.Status(fiber.StatusUnauthorized).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "Authorization header is required",
 			Status:  fiber.StatusUnauthorized,
-		})
+		}
+		c.Status(fiber.StatusUnauthorized).JSON(errorResponse)
+		logRequest(c, "", rawRequestBody)
+		return nil
 	}
 
 	if err := c.BodyParser(&reqBody); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "Invalid request body",
 			Status:  fiber.StatusBadRequest,
-		})
+		}
+		c.Status(fiber.StatusBadRequest).JSON(errorResponse)
+		logRequest(c, "", rawRequestBody)
+		return nil
 	}
+
+	// Convert parsed reqBody to JSON string for logging (with actual values)
+	requestBodyBytes, _ := json.Marshal(reqBody)
+	requestBody := string(requestBodyBytes)
 
 	// Prepare payload using data from request
 	payload := map[string]interface{}{
@@ -806,27 +911,36 @@ func CloseBag(c *fiber.Ctx) error {
 
 	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "Failed to marshal payload",
 			Status:  fiber.StatusInternalServerError,
-		})
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
 	}
 
 	baseURL := os.Getenv("DMS_BASE_URL")
 	if baseURL == "" {
-		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "DMS_BASE_URL not set in environment",
 			Status:  fiber.StatusInternalServerError,
-		})
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
 	}
 
 	url := fmt.Sprintf("%s/rms/close-bag/", baseURL)
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "Failed to create request",
 			Status:  fiber.StatusInternalServerError,
-		})
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -835,19 +949,25 @@ func CloseBag(c *fiber.Ctx) error {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return c.Status(fiber.StatusBadGateway).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "Failed to call external API",
 			Status:  fiber.StatusBadGateway,
-		})
+		}
+		c.Status(fiber.StatusBadGateway).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+		errorResponse := types.ApiResponse{
 			Message: "Failed to read response",
 			Status:  fiber.StatusInternalServerError,
-		})
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
 	}
 
 	// Parse the response to include it in our standardized format
@@ -855,11 +975,16 @@ func CloseBag(c *fiber.Ctx) error {
 	if jsonErr := json.Unmarshal(body, &responseData); jsonErr == nil {
 		// Check if this is a success response (2xx status codes)
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			return c.Status(resp.StatusCode).JSON(types.ApiResponse{
+			successResponse := types.ApiResponse{
 				Message: "Bag closed successfully",
 				Status:  resp.StatusCode,
 				Data:    responseData,
-			})
+			}
+			c.Status(resp.StatusCode).JSON(successResponse)
+			// Serialize the response properly for logging
+			responseBytes, _ := json.Marshal(successResponse)
+			logRequest(c, string(responseBytes), requestBody)
+			return nil
 		} else {
 			// For error responses, extract the message from the response data if available
 			var message string = "Bag closure failed"
@@ -873,18 +998,28 @@ func CloseBag(c *fiber.Ctx) error {
 				}
 			}
 
-			return c.Status(resp.StatusCode).JSON(types.ApiResponse{
+			errorResponse := types.ApiResponse{
 				Message: message,
 				Status:  resp.StatusCode,
 				Data:    responseData,
-			})
+			}
+			c.Status(resp.StatusCode).JSON(errorResponse)
+			// Serialize the response properly for logging
+			responseBytes, _ := json.Marshal(errorResponse)
+			logRequest(c, string(responseBytes), requestBody)
+			return nil
 		}
 	}
 
 	// If JSON parsing fails, return the raw response
-	return c.Status(resp.StatusCode).JSON(types.ApiResponse{
+	finalResponse := types.ApiResponse{
 		Message: "Bag closure processed",
 		Status:  resp.StatusCode,
 		Data:    string(body),
-	})
+	}
+	c.Status(resp.StatusCode).JSON(finalResponse)
+	// Serialize the response properly for logging
+	responseBytes, _ := json.Marshal(finalResponse)
+	logRequest(c, string(responseBytes), requestBody)
+	return nil
 }
