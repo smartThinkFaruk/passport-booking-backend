@@ -12,6 +12,7 @@ import (
 	"passport-booking/logger"
 	bookingModel "passport-booking/models/booking"
 	"passport-booking/models/user"
+	"passport-booking/services/booking_event"
 	"passport-booking/types"
 	bagType "passport-booking/types/bag"
 	"time"
@@ -337,7 +338,34 @@ func AddItemToBag(c *fiber.Ctx) error {
 		})
 	}
 
+	// Safely extract user ID from JWT claims
+	var userID string
+	if userClaims := c.Locals("user"); userClaims != nil {
+		if claims, ok := userClaims.(map[string]interface{}); ok {
+			if username, exists := claims["username"]; exists {
+				if usernameStr, ok := username.(string); ok {
+					// Query the database to get the actual user ID
+					var authUser user.User
+					if err := db.Where("username = ?", usernameStr).First(&authUser).Error; err == nil {
+						// Convert user ID to string
+						userID = fmt.Sprintf("%d", authUser.ID)
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback to empty string if userID couldn't be extracted
+	if userID == "" {
+		userID = "system" // or handle this case as appropriate for your application
+	}
+
 	if booking.Status == bookingModel.BookingStatusBooked {
+		// Already booked, create event for adding item to bag
+		if err := booking_event.SnapshotBookingToEvent(db, &booking, "item_added_to_bag", userID); err != nil {
+			// Log the error but don't fail the operation
+			fmt.Printf("Failed to create booking event: %v\n", err)
+		}
 		// Already booked, just add article
 		return callAddArticleAPI(c, authHeader, reqBody, strPtrToStr(booking.Barcode), os.Getenv("DMS_BASE_URL"))
 	}
@@ -374,34 +402,38 @@ func AddItemToBag(c *fiber.Ctx) error {
 		})
 	}
 
-	// Safely extract user ID from JWT claims
-	var userID string
-	if userClaims := c.Locals("user"); userClaims != nil {
-		if claims, ok := userClaims.(map[string]interface{}); ok {
-			if username, exists := claims["username"]; exists {
-				if usernameStr, ok := username.(string); ok {
-					// Query the database to get the actual user ID
-					var authUser user.User
-					if err := db.Where("username = ?", usernameStr).First(&authUser).Error; err == nil {
-						// Convert user ID to string
-						userID = fmt.Sprintf("%d", authUser.ID)
-					}
-				}
-			}
-		}
-	}
-
-	// Fallback to empty string if userID couldn't be extracted
-	if userID == "" {
-		userID = "system" // or handle this case as appropriate for your application
-	}
-
 	// Update booking status to booked and save barcode
 	booking.Status = bookingModel.BookingStatusBooked
 	booking.Barcode = &barcode
 	booking.BookingDate = time.Now()
 	booking.UpdatedBy = userID
-	db.Save(&booking)
+
+	// Use transaction to ensure both booking update and event creation succeed together
+	tx := db.Begin()
+	if err := tx.Save(&booking).Error; err != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+			Message: "Failed to update booking status",
+			Status:  fiber.StatusInternalServerError,
+		})
+	}
+
+	// Create booking event for status change to booked and item added to bag
+	if err := booking_event.SnapshotBookingToEvent(tx, &booking, "booking_confirmed_and_item_added_to_bag", userID); err != nil {
+		tx.Rollback()
+		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+			Message: "Failed to create booking event",
+			Status:  fiber.StatusInternalServerError,
+		})
+	}
+
+	// Commit the transaction
+	if err := tx.Commit().Error; err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
+			Message: "Failed to commit booking changes",
+			Status:  fiber.StatusInternalServerError,
+		})
+	}
 
 	return callAddArticleAPI(c, authHeader, reqBody, barcode, os.Getenv("DMS_BASE_URL"))
 }
