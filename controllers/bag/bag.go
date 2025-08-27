@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/gofiber/fiber/v2"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"passport-booking/database"
@@ -77,7 +77,7 @@ func GetBranchList(c *fiber.Ctx) error {
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		errorResponse := fiber.Map{"error": "Failed to read response"}
 		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
@@ -190,7 +190,7 @@ func CreateBranchMapping(c *fiber.Ctx) error {
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
 			Message: "Failed to read response",
@@ -283,7 +283,7 @@ func CreateBag(c *fiber.Ctx) error {
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
 			Message: "Failed to read response",
@@ -374,9 +374,33 @@ func AddItemToBag(c *fiber.Ctx) error {
 		})
 	}
 
+	// Safely extract user ID from JWT claims
+	var userID string
+	if userClaims := c.Locals("user"); userClaims != nil {
+		if claims, ok := userClaims.(map[string]interface{}); ok {
+			if username, exists := claims["username"]; exists {
+				if usernameStr, ok := username.(string); ok {
+					// Query the database to get the actual user ID
+					var authUser user.User
+					if err := db.Where("username = ?", usernameStr).First(&authUser).Error; err == nil {
+						// Convert user ID to string
+						userID = fmt.Sprintf("%d", authUser.ID)
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback to empty string if userID couldn't be extracted
+	if userID == "" {
+		userID = "system" // or handle this case as appropriate for your application
+	}
+
 	// Update booking status to booked and save barcode
 	booking.Status = bookingModel.BookingStatusBooked
 	booking.Barcode = &barcode
+	booking.BookingDate = time.Now()
+	booking.UpdatedBy = userID
 	db.Save(&booking)
 
 	return callAddArticleAPI(c, authHeader, reqBody, barcode, os.Getenv("DMS_BASE_URL"))
@@ -423,7 +447,7 @@ func callAddArticleAPI(c *fiber.Ctx, authHeader string, reqBody bagType.AddItemR
 		})
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
 			Message: "Failed to read response",
@@ -477,7 +501,7 @@ func getBarcodeFromAPI(authHeader string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return "", fmt.Errorf("failed to read response: %v", err)
 	}
@@ -613,7 +637,7 @@ func BookingDms(authHeader, barcode, orderID string) ([]byte, int, error) {
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to read response: %v", err)
 	}
@@ -691,7 +715,7 @@ func CloseBag(c *fiber.Ctx) error {
 	}
 	defer resp.Body.Close()
 
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(types.ApiResponse{
 			Message: "Failed to read response",
