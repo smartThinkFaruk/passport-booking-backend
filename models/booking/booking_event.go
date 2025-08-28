@@ -42,6 +42,7 @@ type BookingEvent struct {
 	AddressInfo *address.Address `gorm:"foreignKey:AddressID" json:"address_info,omitempty"`
 
 	Status      BookingStatus `gorm:"size:20;not null;default:initial" json:"status"`
+	BookingType BookingType   `gorm:"size:20" json:"booking_type"` // "agent" or "customer"
 	BookingDate time.Time     `gorm:"" json:"booking_date"`
 	CreatedBy   string        `gorm:"type:varchar(255);not null" json:"created_by"`
 	CreatedAt   time.Time     `gorm:"autoCreateTime" json:"created_at"`

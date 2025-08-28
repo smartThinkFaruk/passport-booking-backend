@@ -13,6 +13,7 @@ import (
 	bookingTypes "passport-booking/types/booking"
 	"passport-booking/utils"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -253,6 +254,40 @@ func (bc *BookingController) Store(c *fiber.Ctx) error {
 		})
 	}
 
+	userPermission, ok := claims["permissions"].([]interface{})
+
+	if !ok {
+		return bc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Message: "Invalid user permissions",
+			Status:  fiber.StatusUnauthorized,
+			Data:    nil,
+		})
+	}
+
+	// Extract the role part (e.g., "customer" from "passport-booking.customer.full-permit")
+	var UserBookingType string
+	if len(userPermission) > 0 {
+		if permStr, ok := userPermission[0].(string); ok {
+			// Split by dots and get the middle part (index 1)
+			parts := strings.Split(permStr, ".")
+			if len(parts) >= 2 {
+				extractedRole := parts[1] // This will be "customer" or "agent"
+
+				// Map the extracted role to BookingType constants
+				switch extractedRole {
+				case "customer":
+					UserBookingType = string(bookingModel.BookingTypeCustomer)
+				case "agent":
+					UserBookingType = string(bookingModel.BookingTypeAgent)
+				default:
+					UserBookingType = string(bookingModel.BookingTypeCustomer) // Default to customer
+				}
+
+				logger.Info(fmt.Sprintf("User role extracted: %s, mapped to BookingType: %s from permission: %s", extractedRole, UserBookingType, permStr))
+			}
+		}
+	}
+
 	userID := uint(userInfo.ID)
 
 	// Check if booking with the same AppOrOrderID already exists
@@ -292,10 +327,12 @@ func (bc *BookingController) Store(c *fiber.Ctx) error {
 			Address:               req.Address,
 			EmergencyContactName:  &req.EmergencyContactName,
 			EmergencyContactPhone: &req.EmergencyContactPhone,
-			Status:                bookingModel.BookingStatusInitial,
-			BookingDate:           time.Now(),
-			CreatedBy:             strconv.FormatUint(uint64(userID), 10),
-			CreatedAt:             time.Now(),
+
+			Status:      bookingModel.BookingStatusInitial,
+			BookingType: bookingModel.BookingType(UserBookingType),
+			BookingDate: time.Now(),
+			CreatedBy:   strconv.FormatUint(uint64(userID), 10),
+			CreatedAt:   time.Now(),
 		}
 
 		if err := tx.Create(&booking).Error; err != nil {
@@ -565,6 +602,43 @@ func (bc *BookingController) UpdateDeliveryPhone(c *fiber.Ctx) error {
 		})
 	}
 
+	// Get user authentication information
+	claims, ok := c.Locals("user").(map[string]interface{})
+	if !ok {
+		return bc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Message: "Invalid user claims",
+			Status:  fiber.StatusUnauthorized,
+			Data:    nil,
+		})
+	}
+
+	userUUID, ok := claims["uuid"].(string)
+	if !ok || userUUID == "" {
+		return bc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Message: "User UUID not found in token",
+			Status:  fiber.StatusUnauthorized,
+			Data:    nil,
+		})
+	}
+
+	userInfo, err := utils.GetUserByUUID(userUUID)
+	if err != nil {
+		logger.Error("Error finding user by UUID", err)
+		status := fiber.StatusInternalServerError
+		msg := "Database error"
+		if err.Error() == "user not found" {
+			status = fiber.StatusUnauthorized
+			msg = "User not found"
+		}
+		return bc.sendResponseWithLog(c, status, types.ApiResponse{
+			Message: msg,
+			Status:  status,
+			Data:    nil,
+		})
+	}
+
+	userID := uint(userInfo.ID)
+
 	// Find the booking
 	var booking bookingModel.Booking
 	if err := bc.DB.First(&booking, req.BookingID).Error; err != nil {
@@ -579,6 +653,24 @@ func (bc *BookingController) UpdateDeliveryPhone(c *fiber.Ctx) error {
 		return bc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
 			Status:  fiber.StatusInternalServerError,
 			Message: "Internal server error",
+			Data:    nil,
+		})
+	}
+
+	// Check if the booking belongs to the current user
+	if booking.UserID != userID {
+		return bc.sendResponseWithLog(c, fiber.StatusForbidden, types.ApiResponse{
+			Status:  fiber.StatusForbidden,
+			Message: "You don't have permission to update this booking",
+			Data:    nil,
+		})
+	}
+
+	// Validate that delivery phone matches user's phone
+	if booking.Phone != req.DeliveryPhone {
+		return bc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Delivery phone must match your passport delivery phone",
 			Data:    nil,
 		})
 	}

@@ -41,6 +41,7 @@ func SnapshotBookingToEvent(tx *gorm.DB, b *bookingModel.Booking, eventType stri
 		AddressInfo: b.AddressInfo,
 
 		Status:      b.Status,
+		BookingType: b.BookingType,
 		BookingDate: b.BookingDate,
 		CreatedBy:   b.CreatedBy,
 		CreatedAt:   b.CreatedAt,
