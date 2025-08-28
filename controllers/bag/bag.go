@@ -133,10 +133,23 @@ func GetOperatorList(c *fiber.Ctx) error {
 		return nil
 	}
 
+	// Filter users who have the "passport-booking.operator.full-permit" permission
+	var operators []user.User
+	targetPermission := "passport-booking.operator.full-permit"
+
+	for _, u := range users {
+		for _, permission := range u.Permissions {
+			if permission == targetPermission {
+				operators = append(operators, u)
+				break // Found the permission, no need to check other permissions for this user
+			}
+		}
+	}
+
 	successResponse := types.ApiResponse{
 		Message: "Operators retrieved successfully",
 		Status:  fiber.StatusOK,
-		Data:    users,
+		Data:    operators,
 	}
 	c.JSON(successResponse)
 
