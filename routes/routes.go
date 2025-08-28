@@ -66,17 +66,21 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 
 	bookingGroup.Post("/create", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
+		constants.PermCustomerFull,
 	), bookingController.Store)
 
 	bookingGroup.Put("/create/update/:id", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
+		constants.PermCustomerFull,
 	), bookingController.StoreUpdate)
 
 	bookingGroup.Get("/list", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
+		constants.PermCustomerFull,
 	), bookingController.Index)
 	bookingGroup.Get("/details/:id", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
+		constants.PermCustomerFull,
 	), bookingController.Show)
 
 	/*=============================================================================
@@ -86,18 +90,22 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	// Delivery phone management routes
 	bookingGroup.Post("/delivery-phone", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
+		constants.PermCustomerFull,
 	), bookingController.UpdateDeliveryPhone)
 
 	bookingGroup.Post("/verify-delivery-phone", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
+		constants.PermCustomerFull,
 	), bookingController.VerifyDeliveryPhone)
 
 	bookingGroup.Post("/otp-retry-info", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
+		constants.PermCustomerFull,
 	), bookingController.GetOTPRetryInfo)
 
 	bookingGroup.Post("/resend-otp", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
+		constants.PermCustomerFull,
 	), bookingController.ResendOTP)
 
 }
