@@ -8,6 +8,7 @@ import (
 	"passport-booking/models/booking"
 	"passport-booking/models/log"
 	"passport-booking/models/otp"
+	"passport-booking/models/slip_parser"
 	"passport-booking/models/user"
 	"reflect"
 	"strings"
@@ -90,6 +91,9 @@ func getRegisteredModels() []ModelInfo {
 
 		// Log models
 		&log.Log{},
+
+		// Slip Parser models
+		&slip_parser.SlipParserRequest{},
 	}
 
 	var modelInfos []ModelInfo

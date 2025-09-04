@@ -38,16 +38,7 @@ func NewBookingController(db *gorm.DB, asyncLogger *logger.AsyncLogger) *Booking
 
 // Helper function to log API requests and responses
 func (bc *BookingController) logAPIRequest(c *fiber.Ctx) {
-	logEntry := types.LogEntry{
-		Method:          c.Method(),
-		URL:             c.OriginalURL(),
-		RequestBody:     string(c.Body()),
-		ResponseBody:    string(c.Response().Body()),
-		RequestHeaders:  string(c.Request().Header.Header()),
-		ResponseHeaders: string(c.Response().Header.Header()),
-		StatusCode:      c.Response().StatusCode(),
-		CreatedAt:       time.Now(),
-	}
+	logEntry := utils.CreateSanitizedLogEntry(c)
 	bc.loggerInstance.Log(logEntry)
 }
 

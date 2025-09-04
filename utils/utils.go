@@ -10,6 +10,7 @@ import (
 	"os"
 	"passport-booking/database"
 	"passport-booking/models/user"
+	"passport-booking/types"
 	"regexp"
 	"strings"
 	"sync"
@@ -280,4 +281,129 @@ func ValidatePhoneNumber(phone string) bool {
 
 	// Check if the phone matches the pattern
 	return re.MatchString(phone)
+}
+
+// sanitizeRequestBody sanitizes request body for file uploads and large content
+func sanitizeRequestBody(c *fiber.Ctx) string {
+	// Check if this is a multipart form (file upload)
+	contentType := c.Get("Content-Type")
+	if strings.Contains(contentType, "multipart/form-data") {
+		// For multipart requests, create a sanitized representation
+		formData := make(map[string]interface{})
+
+		// Get form values (non-file fields)
+		if form, err := c.MultipartForm(); err == nil {
+			// Add text fields
+			for key, values := range form.Value {
+				if len(values) > 0 {
+					formData[key] = values[0] // Take first value
+				}
+			}
+
+			// Add file field information without content
+			for key, files := range form.File {
+				fileInfo := make([]map[string]interface{}, len(files))
+				for i, file := range files {
+					fileInfo[i] = map[string]interface{}{
+						"filename": file.Filename,
+						"size":     file.Size,
+						"content":  "[FILE_CONTENT_REMOVED]",
+					}
+				}
+				formData[key] = fileInfo
+			}
+		}
+
+		// Convert to JSON string
+		if jsonBytes, err := json.Marshal(formData); err == nil {
+			return string(jsonBytes)
+		}
+		return "[MULTIPART_FORM_DATA]"
+	}
+
+	// For regular requests, return the body but check for base64 encoded content
+	body := string(c.Body())
+	if len(body) > 1000 && (strings.Contains(body, "data:image/") ||
+		strings.Contains(body, "base64") ||
+		isLikelyBase64(body)) {
+		return "[LARGE_REQUEST_BODY_WITH_POSSIBLE_FILE_CONTENT]"
+	}
+
+	return body
+}
+
+// isLikelyBase64 detects if content looks like base64
+func isLikelyBase64(content string) bool {
+	// Simple heuristic: if more than 50% of content is base64 characters and it's long
+	if len(content) < 100 {
+		return false
+	}
+
+	base64Chars := 0
+	for _, char := range content {
+		if (char >= 'A' && char <= 'Z') ||
+			(char >= 'a' && char <= 'z') ||
+			(char >= '0' && char <= '9') ||
+			char == '+' || char == '/' || char == '=' {
+			base64Chars++
+		}
+	}
+
+	return float64(base64Chars)/float64(len(content)) > 0.8
+}
+
+// CreateSanitizedLogEntry creates a deep copied and sanitized log entry for logging
+// This function handles file uploads, large content, and creates safe copies of all data
+func CreateSanitizedLogEntry(c *fiber.Ctx) types.LogEntry {
+	// Create deep copies of all data to prevent memory reference issues
+	method := string([]byte(c.Method()))
+	url := string([]byte(c.OriginalURL()))
+	requestBody := sanitizeRequestBody(c) // Use sanitized request body
+	responseBody := string(append([]byte(nil), c.Response().Body()...))
+
+	// Deep copy headers
+	requestHeaders := make([]byte, len(c.Request().Header.Header()))
+	copy(requestHeaders, c.Request().Header.Header())
+
+	responseHeaders := make([]byte, len(c.Response().Header.Header()))
+	copy(responseHeaders, c.Response().Header.Header())
+
+	return types.LogEntry{
+		Method:          method,
+		URL:             url,
+		RequestBody:     requestBody,
+		ResponseBody:    responseBody,
+		RequestHeaders:  string(requestHeaders),
+		ResponseHeaders: string(responseHeaders),
+		StatusCode:      c.Response().StatusCode(),
+		CreatedAt:       time.Now(),
+	}
+}
+
+// CreateSanitizedLogEntryWithCustomBody creates a sanitized log entry with custom request and response bodies
+// Useful for cases where you want to provide pre-processed body content
+func CreateSanitizedLogEntryWithCustomBody(c *fiber.Ctx, requestBody, responseBody string) types.LogEntry {
+	// Create deep copies of all data to prevent memory reference issues
+	method := string([]byte(c.Method()))
+	url := string([]byte(c.OriginalURL()))
+	requestBodyCopy := string(append([]byte(nil), []byte(requestBody)...))
+	responseBodyCopy := string(append([]byte(nil), []byte(responseBody)...))
+
+	// Deep copy headers
+	requestHeaders := make([]byte, len(c.Request().Header.Header()))
+	copy(requestHeaders, c.Request().Header.Header())
+
+	responseHeaders := make([]byte, len(c.Response().Header.Header()))
+	copy(responseHeaders, c.Response().Header.Header())
+
+	return types.LogEntry{
+		Method:          method,
+		URL:             url,
+		RequestBody:     requestBodyCopy,
+		ResponseBody:    responseBodyCopy,
+		RequestHeaders:  string(requestHeaders),
+		ResponseHeaders: string(responseHeaders),
+		StatusCode:      c.Response().StatusCode(),
+		CreatedAt:       time.Now(),
+	}
 }

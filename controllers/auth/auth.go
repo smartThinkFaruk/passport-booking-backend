@@ -9,6 +9,7 @@ import (
 	"passport-booking/logger"
 	"passport-booking/models/user"
 	"passport-booking/types"
+	"passport-booking/utils"
 	"strings"
 	"time"
 
@@ -140,16 +141,7 @@ func (h *AuthController) Register(c *fiber.Ctx) error {
 		}
 	}
 
-	logEntry := types.LogEntry{
-		Method:          c.Method(),
-		URL:             c.OriginalURL(),
-		RequestBody:     string(c.Body()),
-		ResponseBody:    string(c.Response().Body()),
-		RequestHeaders:  string(c.Request().Header.Header()),
-		ResponseHeaders: string(c.Response().Header.Header()),
-		StatusCode:      c.Response().StatusCode(),
-		CreatedAt:       time.Now(),
-	}
+	logEntry := utils.CreateSanitizedLogEntry(c)
 	h.loggerInstance.Log(logEntry)
 
 	logger.Success("User registered in successfully." + " at " + currentTime)
@@ -286,16 +278,7 @@ func (h *AuthController) Login(c *fiber.Ctx) error {
 		}
 	}
 
-	logEntry := types.LogEntry{
-		Method:          c.Method(),
-		URL:             c.OriginalURL(),
-		RequestBody:     string(c.Body()),
-		ResponseBody:    responseBodyStr,
-		RequestHeaders:  string(c.Request().Header.Header()),
-		ResponseHeaders: string(c.Response().Header.Header()),
-		StatusCode:      c.Response().StatusCode(),
-		CreatedAt:       time.Now(),
-	}
+	logEntry := utils.CreateSanitizedLogEntryWithCustomBody(c, string(c.Body()), responseBodyStr)
 	h.loggerInstance.Log(logEntry)
 
 	logger.Success("User logged in successfully. uuid: " + loginResponse.Data.UUID + " at " + currentTime)

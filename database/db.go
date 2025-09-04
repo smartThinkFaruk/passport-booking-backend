@@ -8,6 +8,7 @@ import (
 	"passport-booking/models/address"
 	"passport-booking/models/booking"
 	"passport-booking/models/log"
+	"passport-booking/models/slip_parser"
 	"passport-booking/models/user"
 
 	"github.com/joho/godotenv"
@@ -51,36 +52,30 @@ func InitDB() (*gorm.DB, error) {
 	}
 	logger.Success("Successfully connected to the database")
 
-	// Use dynamic migration system instead of simple AutoMigrate
-	migrator := NewDynamicMigrator(DB)
-
-	// Detect schema changes
-	operations, err := migrator.DetectChanges()
-	if err != nil {
-		logger.Error("Failed to detect schema changes", err)
+	// Run auto migration for all models
+	if err := autoMigrate(); err != nil {
+		logger.Error("Failed to run auto migration", err)
 		return nil, err
 	}
-
-	// Execute migrations
-	if err := migrator.ExecuteMigrations(operations); err != nil {
-		logger.Error("Failed to execute migrations", err)
-		return nil, err
-	}
-	logger.Success("All dynamic migrations completed successfully")
+	logger.Success("All auto migrations completed successfully")
 
 	// Handle foreign key constraints after migrations
 	if err := createForeignKeyConstraints(); err != nil {
 		logger.Error("Failed to create foreign key constraints", err)
-		return nil, err
+		// Don't return error here, just log and continue
+		logger.Warning("Continuing without some foreign key constraints")
+	} else {
+		logger.Success("All foreign key constraints created successfully")
 	}
-	logger.Success("All foreign key constraints created successfully")
 
-	// Create indexes for better performance
+	// Create indexes for better performance (after migrations)
 	if err := createIndexes(); err != nil {
 		logger.Error("Failed to create indexes", err)
-		return nil, err
+		// Don't return error here, just log and continue
+		logger.Warning("Continuing without some indexes")
+	} else {
+		logger.Success("All indexes created successfully")
 	}
-	logger.Success("All indexes created successfully")
 
 	return DB, nil
 }
@@ -112,10 +107,12 @@ func autoMigrate() error {
 		}
 	}
 
-	// Stage 5: Remaining models
+	// Stage 3: Remaining models
 	remainingModels := []interface{}{
 		// Logging
 		&log.Log{},
+		// Slip Parser
+		&slip_parser.SlipParserRequest{},
 	}
 
 	for _, model := range remainingModels {
@@ -129,57 +126,103 @@ func autoMigrate() error {
 
 // createIndexes creates additional indexes for better performance
 func createIndexes() error {
+	// Helper function to check if table exists before creating index
+	tableExists := func(tableName string) bool {
+		var exists bool
+		err := DB.Raw(`
+			SELECT EXISTS (
+				SELECT 1 FROM information_schema.tables 
+				WHERE table_schema = CURRENT_SCHEMA() 
+				AND table_name = ?
+				AND table_type = 'BASE TABLE'
+			)`, tableName).Scan(&exists).Error
+		return err == nil && exists
+	}
+
 	// User indexes
-	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_users_uuid ON users(uuid)").Error; err != nil {
-		return fmt.Errorf("failed to create user uuid index: %w", err)
-	}
-	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)").Error; err != nil {
-		return fmt.Errorf("failed to create user username index: %w", err)
-	}
-	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)").Error; err != nil {
-		return fmt.Errorf("failed to create user email index: %w", err)
-	}
-	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone)").Error; err != nil {
-		return fmt.Errorf("failed to create user phone index: %w", err)
+	if tableExists("users") {
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_users_uuid ON users(uuid)").Error; err != nil {
+			return fmt.Errorf("failed to create user uuid index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)").Error; err != nil {
+			return fmt.Errorf("failed to create user username index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)").Error; err != nil {
+			return fmt.Errorf("failed to create user email index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone)").Error; err != nil {
+			return fmt.Errorf("failed to create user phone index: %w", err)
+		}
 	}
 
 	// Address indexes
-	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_addresses_division ON addresses(division)").Error; err != nil {
-		return fmt.Errorf("failed to create address division index: %w", err)
-	}
-	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_addresses_district ON addresses(district)").Error; err != nil {
-		return fmt.Errorf("failed to create address district index: %w", err)
-	}
-	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_addresses_police_station ON addresses(police_station)").Error; err != nil {
-		return fmt.Errorf("failed to create address police_station index: %w", err)
+	if tableExists("addresses") {
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_addresses_division ON addresses(division)").Error; err != nil {
+			return fmt.Errorf("failed to create address division index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_addresses_district ON addresses(district)").Error; err != nil {
+			return fmt.Errorf("failed to create address district index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_addresses_police_station ON addresses(police_station)").Error; err != nil {
+			return fmt.Errorf("failed to create address police_station index: %w", err)
+		}
 	}
 
 	// Booking indexes
-	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_app_or_order_id ON bookings(app_or_order_id)").Error; err != nil {
-		return fmt.Errorf("failed to create booking app_or_order_id index: %w", err)
-	}
-	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_phone ON bookings(phone)").Error; err != nil {
-		return fmt.Errorf("failed to create booking phone index: %w", err)
-	}
-	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status)").Error; err != nil {
-		return fmt.Errorf("failed to create booking status index: %w", err)
-	}
-	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_address_id ON bookings(address_id)").Error; err != nil {
-		return fmt.Errorf("failed to create booking address_id index: %w", err)
-	}
-	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_created_at ON bookings(created_at)").Error; err != nil {
-		return fmt.Errorf("failed to create booking created_at index: %w", err)
+	if tableExists("bookings") {
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_app_or_order_id ON bookings(app_or_order_id)").Error; err != nil {
+			return fmt.Errorf("failed to create booking app_or_order_id index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_phone ON bookings(phone)").Error; err != nil {
+			return fmt.Errorf("failed to create booking phone index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status)").Error; err != nil {
+			return fmt.Errorf("failed to create booking status index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_address_id ON bookings(address_id)").Error; err != nil {
+			return fmt.Errorf("failed to create booking address_id index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_created_at ON bookings(created_at)").Error; err != nil {
+			return fmt.Errorf("failed to create booking created_at index: %w", err)
+		}
 	}
 
 	// Log indexes
-	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_logs_method ON logs(method)").Error; err != nil {
-		return fmt.Errorf("failed to create log method index: %w", err)
+	if tableExists("logs") {
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_logs_method ON logs(method)").Error; err != nil {
+			return fmt.Errorf("failed to create log method index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_logs_status_code ON logs(status_code)").Error; err != nil {
+			return fmt.Errorf("failed to create log status_code index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_logs_created_at ON logs(created_at)").Error; err != nil {
+			return fmt.Errorf("failed to create log created_at index: %w", err)
+		}
 	}
-	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_logs_status_code ON logs(status_code)").Error; err != nil {
-		return fmt.Errorf("failed to create log status_code index: %w", err)
-	}
-	if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_logs_created_at ON logs(created_at)").Error; err != nil {
-		return fmt.Errorf("failed to create log created_at index: %w", err)
+
+	// Slip Parser indexes (only if table exists)
+	if tableExists("slip_parser_requests") {
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_slip_parser_requests_request_id ON slip_parser_requests(request_id)").Error; err != nil {
+			return fmt.Errorf("failed to create slip parser request_id index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_slip_parser_requests_status ON slip_parser_requests(status)").Error; err != nil {
+			return fmt.Errorf("failed to create slip parser status index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_slip_parser_requests_app_or_order_id ON slip_parser_requests(app_or_order_id)").Error; err != nil {
+			return fmt.Errorf("failed to create slip parser app_or_order_id index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_slip_parser_requests_phone ON slip_parser_requests(phone)").Error; err != nil {
+			return fmt.Errorf("failed to create slip parser phone index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_slip_parser_requests_created_at ON slip_parser_requests(created_at)").Error; err != nil {
+			return fmt.Errorf("failed to create slip parser created_at index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_slip_parser_requests_ip_address ON slip_parser_requests(ip_address)").Error; err != nil {
+			return fmt.Errorf("failed to create slip parser ip_address index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_slip_parser_requests_file_hash ON slip_parser_requests(file_hash)").Error; err != nil {
+			return fmt.Errorf("failed to create slip parser file_hash index: %w", err)
+		}
 	}
 
 	return nil

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"github.com/gofiber/fiber/v2"
 	"io"
 	"net/http"
 	"os"
@@ -15,7 +14,10 @@ import (
 	"passport-booking/services/booking_event"
 	"passport-booking/types"
 	bagType "passport-booking/types/bag"
+	"passport-booking/utils"
 	"time"
+
+	"github.com/gofiber/fiber/v2"
 )
 
 func logRequest(c *fiber.Ctx, responseBody string, requestBody string) {
@@ -23,16 +25,7 @@ func logRequest(c *fiber.Ctx, responseBody string, requestBody string) {
 	asyncLogger := logger.NewAsyncLogger(database.DB)
 	go asyncLogger.ProcessLog()
 
-	logEntry := types.LogEntry{
-		Method:          c.Method(),
-		URL:             c.OriginalURL(),
-		RequestBody:     requestBody,
-		ResponseBody:    responseBody,
-		RequestHeaders:  string(c.Request().Header.Header()),
-		ResponseHeaders: string(c.Response().Header.Header()),
-		StatusCode:      c.Response().StatusCode(),
-		CreatedAt:       time.Now(),
-	}
+	logEntry := utils.CreateSanitizedLogEntryWithCustomBody(c, requestBody, responseBody)
 	asyncLogger.Log(logEntry)
 }
 
