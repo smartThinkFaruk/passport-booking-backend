@@ -65,7 +65,7 @@ func (s *SlipParserService) CreateInitialRequest(c *fiber.Ctx, requestID, origin
 		MimeType:         mimeType,
 		Status:           "processing",
 		IPAddress:        ipAddress,
-		UserAgent:        &userAgent,
+		UserAgent:        userAgent,
 	}
 
 	if err := s.DB.Create(request).Error; err != nil {

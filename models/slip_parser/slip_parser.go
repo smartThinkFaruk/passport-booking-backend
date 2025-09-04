@@ -20,21 +20,21 @@ type SlipParserRequest struct {
 	ProcessingTimeMs int64  `json:"processing_time_ms" gorm:"default:0"`
 
 	// Parsed data fields
-	AppOrOrderID          *string `json:"app_or_order_id" gorm:"type:varchar(100);index"`
-	Name                  *string `json:"name" gorm:"type:varchar(255)"`
-	FatherName            *string `json:"father_name" gorm:"type:varchar(255)"`
-	MotherName            *string `json:"mother_name" gorm:"type:varchar(255)"`
-	Phone                 *string `json:"phone" gorm:"type:varchar(20);index"`
-	Address               *string `json:"address" gorm:"type:text"`
-	EmergencyContactName  *string `json:"emergency_contact_name" gorm:"type:varchar(255)"`
-	EmergencyContactPhone *string `json:"emergency_contact_phone" gorm:"type:varchar(20)"`
+	AppOrOrderID          string `json:"app_or_order_id" gorm:"type:varchar(100);index;default:''"`
+	Name                  string `json:"name" gorm:"type:varchar(255);default:''"`
+	FatherName            string `json:"father_name" gorm:"type:varchar(255);default:''"`
+	MotherName            string `json:"mother_name" gorm:"type:varchar(255);default:''"`
+	Phone                 string `json:"phone" gorm:"type:varchar(20);index;default:''"`
+	Address               string `json:"address" gorm:"type:text;default:''"`
+	EmergencyContactName  string `json:"emergency_contact_name" gorm:"type:varchar(255);default:''"`
+	EmergencyContactPhone string `json:"emergency_contact_phone" gorm:"type:varchar(20);default:''"`
 
 	// Error information
-	ErrorMessage *string `json:"error_message" gorm:"type:text"`
+	ErrorMessage string `json:"error_message" gorm:"type:text;default:''"`
 
 	// Metadata
-	IPAddress string  `json:"ip_address" gorm:"type:varchar(45);index"` // Support IPv6
-	UserAgent *string `json:"user_agent" gorm:"type:text"`
+	IPAddress string `json:"ip_address" gorm:"type:varchar(45);index;default:''"` // Support IPv6
+	UserAgent string `json:"user_agent" gorm:"type:text;default:''"`
 
 	// Timestamps
 	CreatedAt time.Time      `json:"created_at" gorm:"index"`
@@ -73,14 +73,14 @@ func (spr *SlipParserRequest) IsFailed() bool {
 // MarkAsSuccess marks the request as successful and saves parsed data
 func (spr *SlipParserRequest) MarkAsSuccess(db *gorm.DB, parsedData *SlipParserResponse) error {
 	spr.Status = "success"
-	spr.AppOrOrderID = &parsedData.AppOrOrderID
-	spr.Name = &parsedData.Name
-	spr.FatherName = &parsedData.FatherName
-	spr.MotherName = &parsedData.MotherName
-	spr.Phone = &parsedData.Phone
-	spr.Address = &parsedData.Address
-	spr.EmergencyContactName = &parsedData.EmergencyContactName
-	spr.EmergencyContactPhone = &parsedData.EmergencyContactPhone
+	spr.AppOrOrderID = parsedData.AppOrOrderID
+	spr.Name = parsedData.Name
+	spr.FatherName = parsedData.FatherName
+	spr.MotherName = parsedData.MotherName
+	spr.Phone = parsedData.Phone
+	spr.Address = parsedData.Address
+	spr.EmergencyContactName = parsedData.EmergencyContactName
+	spr.EmergencyContactPhone = parsedData.EmergencyContactPhone
 	spr.ProcessingTimeMs = parsedData.ProcessingTimeMs
 
 	return db.Save(spr).Error
@@ -89,7 +89,7 @@ func (spr *SlipParserRequest) MarkAsSuccess(db *gorm.DB, parsedData *SlipParserR
 // MarkAsFailed marks the request as failed with error message
 func (spr *SlipParserRequest) MarkAsFailed(db *gorm.DB, errorMsg string, processingTime int64) error {
 	spr.Status = "failed"
-	spr.ErrorMessage = &errorMsg
+	spr.ErrorMessage = errorMsg
 	spr.ProcessingTimeMs = processingTime
 
 	return db.Save(spr).Error

@@ -32,7 +32,7 @@ type Booking struct {
 	Address               string  `gorm:"type:text;not null" json:"address"`
 	EmergencyContactName  *string `gorm:"type:varchar(255)" json:"emergency_contact_name,omitempty"`
 	EmergencyContactPhone *string `gorm:"type:varchar(20)" json:"emergency_contact_phone,omitempty"`
-	DeliveryBranchCode	*string `gorm:"type:varchar(100)" json:"delivery_branch_code,omitempty"`
+	DeliveryBranchCode    *string `gorm:"type:varchar(100)" json:"delivery_branch_code,omitempty"`
 	// Foreign key for address relationship - nullable for two-step booking process
 	AddressID   *uint            `gorm:"" json:"address_id,omitempty"`
 	AddressInfo *address.Address `gorm:"foreignKey:AddressID" json:"address_info,omitempty"`
@@ -61,6 +61,6 @@ const (
 type BookingType string
 
 const (
-	BookingTypeAgent   BookingType = "agent"
+	BookingTypeAgent    BookingType = "agent"
 	BookingTypeCustomer BookingType = "customer"
 )

@@ -8,14 +8,7 @@ import (
 )
 
 type BookingCreateRequest struct {
-	AppOrOrderID          string `json:"app_or_order_id" validate:"required,min=1,max=255"`
-	Name                  string `json:"name" validate:"required,min=1,max=255"`
-	FatherName            string `json:"father_name" validate:"required,min=1,max=255"`
-	MotherName            string `json:"mother_name" validate:"required,min=1,max=255"`
-	Phone                 string `json:"phone" validate:"required,phone"`
-	Address               string `json:"address" validate:"required,min=1"`
-	EmergencyContactName  string `json:"emergency_contact_name" validate:"omitempty,max=255"`
-	EmergencyContactPhone string `json:"emergency_contact_phone" validate:"omitempty,phone"`
+	RequestID string `json:"request_id" validate:"required,min=1,max=255"`
 }
 
 // BookingCreateRequest represents the request payload for creating a booking
@@ -33,23 +26,8 @@ type BookingStoreUpdateRequest struct {
 
 // use first step validation
 func (b BookingCreateRequest) Validate() error {
-	if b.AppOrOrderID == "" {
-		return fmt.Errorf("AppOrOrderID is required")
-	}
-	if b.Name == "" {
-		return fmt.Errorf("name is required")
-	}
-	if b.FatherName == "" {
-		return fmt.Errorf("FatherName is required")
-	}
-	if b.MotherName == "" {
-		return fmt.Errorf("MotherName is required")
-	}
-	if b.Phone == "" {
-		return fmt.Errorf("phone is required")
-	}
-	if b.Address == "" {
-		return fmt.Errorf("address is required")
+	if b.RequestID == "" {
+		return fmt.Errorf("RequestID is required")
 	}
 	return nil
 }

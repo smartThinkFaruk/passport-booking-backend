@@ -7,6 +7,7 @@ import (
 	addressModel "passport-booking/models/address"
 	bookingModel "passport-booking/models/booking"
 	"passport-booking/models/otp"
+	"passport-booking/models/slip_parser"
 	"passport-booking/services/booking_event"
 	otpService "passport-booking/services/otp"
 	"passport-booking/types"
@@ -280,14 +281,31 @@ func (bc *BookingController) Store(c *fiber.Ctx) error {
 	}
 
 	userID := uint(userInfo.ID)
+	var slipParserRequest slip_parser.SlipParserRequest
+	err = database.DB.Where("request_id = ?", req.RequestID).First(&slipParserRequest).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return bc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+				Status:  fiber.StatusBadRequest,
+				Message: "Invalid request_id: no matching slip parser request found",
+				Data:    nil,
+			})
+		}
+	} else if slipParserRequest.Status != "success" {
+		return bc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Invalid request_id: slip parser request was not successful",
+			Data:    nil,
+		})
+	}
 
 	// Check if booking with the same AppOrOrderID already exists
 	var existingBooking bookingModel.Booking
-	err = database.DB.Preload("User").Where("app_or_order_id = ?", req.AppOrOrderID).First(&existingBooking).Error
+	err = database.DB.Preload("User").Where("app_or_order_id = ?", slipParserRequest.AppOrOrderID).First(&existingBooking).Error
 
 	if err == nil {
 		// Booking already exists, return existing data
-		logger.Info(fmt.Sprintf("Booking with AppOrOrderID %s already exists", req.AppOrOrderID))
+		logger.Info(fmt.Sprintf("Booking with AppOrOrderID %s already exists", slipParserRequest.AppOrOrderID))
 		return bc.sendResponseWithLog(c, fiber.StatusOK, types.ApiResponse{
 			Status:  fiber.StatusOK,
 			Message: "Booking already exists",
@@ -307,17 +325,18 @@ func (bc *BookingController) Store(c *fiber.Ctx) error {
 
 	// Use DB.Transaction for automatic rollback on error
 	err = database.DB.Transaction(func(tx *gorm.DB) error {
+
 		// Create booking record with basic information only
 		booking = bookingModel.Booking{
 			UserID:                userID,
-			AppOrOrderID:          req.AppOrOrderID,
-			Name:                  req.Name,
-			FatherName:            req.FatherName,
-			MotherName:            req.MotherName,
-			Phone:                 req.Phone,
-			Address:               req.Address,
-			EmergencyContactName:  &req.EmergencyContactName,
-			EmergencyContactPhone: &req.EmergencyContactPhone,
+			AppOrOrderID:          slipParserRequest.AppOrOrderID,
+			Name:                  slipParserRequest.Name,
+			FatherName:            slipParserRequest.FatherName,
+			MotherName:            slipParserRequest.MotherName,
+			Phone:                 slipParserRequest.Phone,
+			Address:               slipParserRequest.Address,
+			EmergencyContactName:  &slipParserRequest.EmergencyContactName,
+			EmergencyContactPhone: &slipParserRequest.EmergencyContactPhone,
 
 			Status:      bookingModel.BookingStatusInitial,
 			BookingType: bookingModel.BookingType(UserBookingType),
