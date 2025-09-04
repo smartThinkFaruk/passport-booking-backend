@@ -1,0 +1,81 @@
+# Docker ignore file for passport booking backend
+
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+passport-booking-backend
+passport-booking.exe
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Log files
+log/
+logs/
+*.log
+
+# Upload directories
+uploaded_slips/
+uploads/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker
+Dockerfile.dev
+docker-compose.dev.yml
+docker-compose.override.yml
+
+# Documentation
+README.md
+docs/
+
+# Development tools
+air.toml
+.air.toml
+
+# Temporary files
+tmp/
+temp/
+
+# Database files
+*.db
+*.sqlite
+
+# Coverage reports
+coverage.html
+coverage.out
