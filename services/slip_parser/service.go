@@ -50,7 +50,7 @@ func (s *SlipParserService) GenerateRequestID() string {
 // CreateInitialRequest creates an initial request record in the database
 func (s *SlipParserService) CreateInitialRequest(c *fiber.Ctx, requestID, originalFileName string, fileSize int64, mimeType string) (*slip_parser.SlipParserRequest, error) {
 	// Get client IP address
-	ipAddress := c.IP()
+	ipAddress := c.Get("X-Forwarded-For")
 	if ipAddress == "" {
 		ipAddress = "unknown"
 	}
