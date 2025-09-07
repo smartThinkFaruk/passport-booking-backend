@@ -480,7 +480,7 @@ func (bc *BookingController) StoreUpdate(c *fiber.Ctx) error {
 
 	// Find the existing booking
 	var booking bookingModel.Booking
-	if err := bc.DB.First(&booking, bookingID).Error; err != nil {
+	if err := bc.DB.Preload("User").Preload("DeliveryAddress").First(&booking, bookingID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return bc.sendResponseWithLog(c, fiber.StatusNotFound, types.ApiResponse{
 				Status:  fiber.StatusNotFound,

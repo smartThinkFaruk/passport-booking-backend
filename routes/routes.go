@@ -69,7 +69,7 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 		constants.PermCustomerFull,
 	), bookingController.Store)
 
-	bookingGroup.Put("/create/update/:id", middleware.RequirePermissions(
+	bookingGroup.Put("/update", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
 		constants.PermCustomerFull,
 	), bookingController.StoreUpdate)
