@@ -8,6 +8,7 @@ import (
 	"passport-booking/models/address"
 	"passport-booking/models/booking"
 	"passport-booking/models/log"
+	"passport-booking/models/otp"
 	"passport-booking/models/slip_parser"
 	"passport-booking/models/user"
 
@@ -99,6 +100,9 @@ func autoMigrate() error {
 	// Stage 2: Models with dependencies on Stage 1
 	stage2Models := []interface{}{
 		&booking.Booking{},
+		&booking.BookingEvent{},
+		&otp.OTP{},
+		&otp.OTPEvent{},
 	}
 
 	for _, model := range stage2Models {
@@ -179,8 +183,8 @@ func createIndexes() error {
 		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings(status)").Error; err != nil {
 			return fmt.Errorf("failed to create booking status index: %w", err)
 		}
-		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_address_id ON bookings(address_id)").Error; err != nil {
-			return fmt.Errorf("failed to create booking address_id index: %w", err)
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_delivery_address_id ON bookings(delivery_address_id)").Error; err != nil {
+			return fmt.Errorf("failed to create booking delivery_address_id index: %w", err)
 		}
 		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_bookings_created_at ON bookings(created_at)").Error; err != nil {
 			return fmt.Errorf("failed to create booking created_at index: %w", err)
@@ -238,7 +242,7 @@ func createForeignKeyConstraints() error {
 		{
 			name: "fk_bookings_address",
 			sql: `ALTER TABLE bookings ADD CONSTRAINT fk_bookings_address 
-				  FOREIGN KEY (address_id) REFERENCES addresses(id) 
+				  FOREIGN KEY (delivery_address_id) REFERENCES addresses(id) 
 				  ON UPDATE CASCADE ON DELETE RESTRICT`,
 		},
 	}

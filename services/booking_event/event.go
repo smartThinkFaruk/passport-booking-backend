@@ -2,6 +2,7 @@ package booking_event
 
 import (
 	bookingModel "passport-booking/models/booking"
+
 	"gorm.io/gorm"
 )
 
@@ -9,7 +10,7 @@ import (
 func SnapshotBookingToEvent(tx *gorm.DB, b *bookingModel.Booking, eventType string, updatedBy string) error {
 	// Make sure relateds are present for event row (User, AddressInfo)
 	// If caller already preloaded, these will be filled; else we fetch minimal required ids.
-	if err := tx.Preload("User").Preload("AddressInfo").First(b, b.ID).Error; err != nil {
+	if err := tx.Preload("User").Preload("DeliveryAddress").First(b, b.ID).Error; err != nil {
 		return err
 	}
 
@@ -24,7 +25,7 @@ func SnapshotBookingToEvent(tx *gorm.DB, b *bookingModel.Booking, eventType stri
 		MotherName:   b.MotherName,
 		Phone:        b.Phone,
 
-		ReceiverName: b.ReceiverName,
+		ReceiverName:  b.ReceiverName,
 		DeliveryPhone: b.DeliveryPhone,
 
 		DeliveryPhoneAppliedVerified:       b.DeliveryPhoneAppliedVerified,
@@ -35,10 +36,10 @@ func SnapshotBookingToEvent(tx *gorm.DB, b *bookingModel.Booking, eventType stri
 		Address:               b.Address,
 		EmergencyContactName:  b.EmergencyContactName,
 		EmergencyContactPhone: b.EmergencyContactPhone,
-		DeliveryBranchCode:	b.DeliveryBranchCode,
+		DeliveryBranchCode:    b.DeliveryBranchCode,
 
-		AddressID:   b.AddressID,
-		AddressInfo: b.AddressInfo,
+		DeliveryAddressID: b.DeliveryAddressID,
+		DeliveryAddress:   b.DeliveryAddress, // optional; gorm will set by ID
 
 		Status:      b.Status,
 		BookingType: b.BookingType,

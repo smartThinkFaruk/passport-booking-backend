@@ -33,9 +33,9 @@ type Booking struct {
 	EmergencyContactName  *string `gorm:"type:varchar(255)" json:"emergency_contact_name,omitempty"`
 	EmergencyContactPhone *string `gorm:"type:varchar(20)" json:"emergency_contact_phone,omitempty"`
 	DeliveryBranchCode    *string `gorm:"type:varchar(100)" json:"delivery_branch_code,omitempty"`
-	// Foreign key for address relationship - nullable for two-step booking process
-	AddressID   *uint            `gorm:"" json:"address_id,omitempty"`
-	AddressInfo *address.Address `gorm:"foreignKey:AddressID" json:"address_info,omitempty"`
+	// Foreign key for address relationship
+	DeliveryAddressID *uint            `json:"delivery_address_id,omitempty"`
+	DeliveryAddress   *address.Address `gorm:"foreignKey:DeliveryAddressID" json:"delivery_address,omitempty"`
 
 	Status      BookingStatus `gorm:"size:20;not null;default:initial" json:"status"`
 	BookingType BookingType   `gorm:"size:20" json:"booking_type"` // "agent" or "customer"

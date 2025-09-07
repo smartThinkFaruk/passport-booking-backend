@@ -790,13 +790,12 @@ func BookingDms(authHeader, barcode, orderID string) ([]byte, int, error) {
 		Zone:          "Zone 1",
 	}
 	// Safely populate address info if it exists
-	if booking.AddressInfo != nil {
-		receiverAddress.AddressType = booking.AddressInfo.AddressType
-		receiverAddress.District = strPtrToStr(booking.AddressInfo.District)
-		receiverAddress.Division = strPtrToStr(booking.AddressInfo.Division)
-		receiverAddress.PoliceStation = strPtrToStr(booking.AddressInfo.PoliceStation)
-		receiverAddress.PostOffice = strPtrToStr(booking.AddressInfo.PostOffice)
-		receiverAddress.StreetAddress = strPtrToStr(booking.AddressInfo.StreetAddress)
+	if booking.DeliveryAddress != nil {
+		receiverAddress.District = strPtrToStr(booking.DeliveryAddress.District)
+		receiverAddress.Division = strPtrToStr(booking.DeliveryAddress.Division)
+		receiverAddress.PoliceStation = strPtrToStr(booking.DeliveryAddress.PoliceStation)
+		receiverAddress.PostOffice = strPtrToStr(booking.DeliveryAddress.PostOffice)
+		receiverAddress.StreetAddress = strPtrToStr(booking.DeliveryAddress.StreetAddress)
 	}
 
 	payload := bagType.BookingRequest{

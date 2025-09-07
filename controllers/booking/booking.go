@@ -263,16 +263,27 @@ func (bc *BookingController) Store(c *fiber.Ctx) error {
 			// Split by dots and get the middle part (index 1)
 			parts := strings.Split(permStr, ".")
 			if len(parts) >= 2 {
+				prefix := parts[0]        // This will be "passport-booking"
 				extractedRole := parts[1] // This will be "customer" or "agent"
 
+				if prefix != "passport-booking" {
+					return bc.sendResponseWithLog(c, fiber.StatusForbidden, types.ApiResponse{
+						Message: "Invalid permission prefix",
+						Status:  fiber.StatusForbidden,
+						Data:    nil,
+					})
+				}
 				// Map the extracted role to BookingType constants
-				switch extractedRole {
-				case "customer":
+				if extractedRole == "customer" {
 					UserBookingType = string(bookingModel.BookingTypeCustomer)
-				case "agent":
+				} else if extractedRole == "agent" {
 					UserBookingType = string(bookingModel.BookingTypeAgent)
-				default:
-					UserBookingType = string(bookingModel.BookingTypeCustomer) // Default to customer
+				} else {
+					return bc.sendResponseWithLog(c, fiber.StatusForbidden, types.ApiResponse{
+						Message: "Invalid user role in permission",
+						Status:  fiber.StatusForbidden,
+						Data:    nil,
+					})
 				}
 
 				logger.Info(fmt.Sprintf("User role extracted: %s, mapped to BookingType: %s from permission: %s", extractedRole, UserBookingType, permStr))
@@ -343,6 +354,15 @@ func (bc *BookingController) Store(c *fiber.Ctx) error {
 			BookingDate: time.Now(),
 			CreatedBy:   strconv.FormatUint(uint64(userID), 10),
 			CreatedAt:   time.Now(),
+			DeliveryAddress: &addressModel.Address{
+				Division:       &req.Division,
+				District:       &req.District,
+				PoliceStation:  &req.PoliceStation,
+				PostOffice:     &req.PostOffice,
+				PostOfficeCode: &req.DeliveryBranchCode,
+				StreetAddress:  &req.StreetAddress,
+			},
+			DeliveryBranchCode: &req.DeliveryBranchCode,
 		}
 
 		if err := tx.Create(&booking).Error; err != nil {
@@ -411,8 +431,8 @@ func (bc *BookingController) StoreUpdate(c *fiber.Ctx) error {
 	}
 
 	// Get booking ID from URL parameter
-	bookingIDParam := c.Params("id")
-	bookingID, err := strconv.Atoi(bookingIDParam)
+	bookingIDParam := req.ID
+	bookingID, err := strconv.Atoi(fmt.Sprintf("%d", bookingIDParam))
 	if err != nil || bookingID <= 0 {
 		return bc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
 			Status:  fiber.StatusBadRequest,
@@ -485,74 +505,39 @@ func (bc *BookingController) StoreUpdate(c *fiber.Ctx) error {
 		})
 	}
 
-	var address addressModel.Address
+	var address = booking.DeliveryAddress
 
-	// Use DB.Transaction for automatic rollback on error
-	err = database.DB.Transaction(func(tx *gorm.DB) error {
-		// Create address record
-		address = addressModel.Address{
-			Division:      &req.Division,
-			District:      &req.District,
-			PoliceStation: &req.PoliceStation,
-			PostOffice:    &req.PostOffice,
-			StreetAddress: &req.StreetAddress,
-			AddressType:   req.AddressType,
+	// Check if address already exists for this booking
+	if address != nil {
+		address.PoliceStation = &req.PoliceStation
+		address.PostOffice = &req.PostOffice
+		address.PostOfficeCode = &req.DeliveryBranchCode
+		address.StreetAddress = &req.StreetAddress
+		address.District = &req.District
+		address.Division = &req.Division
+		if err := bc.DB.Save(&address).Error; err != nil {
+			logger.Error("Failed to update existing address", err)
+			return bc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+				Status:  fiber.StatusInternalServerError,
+				Message: "Failed to update address",
+				Data:    nil,
+			})
 		}
-
-		if err := tx.Create(&address).Error; err != nil {
-			logger.Error("Failed to create address", err)
-			return err
-		}
-
-		// Update booking with delivery and address information
-		booking.DeliveryBranchCode = &req.DeliveryBranchCode
-		booking.ReceiverName = &req.ReceiverName
-		booking.AddressID = &address.ID
-		booking.Status = bookingModel.BookingStatusPreBooked
-		booking.UpdatedBy = strconv.FormatUint(uint64(userID), 10)
-		booking.UpdatedAt = time.Now()
-
-		if err := tx.Save(&booking).Error; err != nil {
-			logger.Error("Failed to update booking", err)
-			return err
-		}
-
-		if err := booking_event.SnapshotBookingToEvent(tx, &booking, "delivery_info_updated", strconv.FormatUint(uint64(userID), 10)); err != nil {
-			logger.Error("Failed to write booking event (delivery_info_updated)", err)
-			return err
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return bc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
-			Status:  fiber.StatusInternalServerError,
-			Message: "Failed to update booking",
-			Data:    nil,
+		// Address updated successfully
+		logger.Info(fmt.Sprintf("Existing address updated successfully for Booking ID: %d", booking.ID))
+		return bc.sendResponseWithLog(c, fiber.StatusOK, types.ApiResponse{
+			Status:  fiber.StatusOK,
+			Message: "Booking delivery information updated successfully",
+			Data:    booking,
 		})
 	}
 
-	// Log success
-	logger.Success(fmt.Sprintf("Booking delivery information updated successfully for ID: %d", booking.ID))
-
-	// Load the complete booking data with relationships
-	var updatedBooking bookingModel.Booking
-	err = database.DB.Preload("User").Preload("AddressInfo").First(&updatedBooking, booking.ID).Error
-	if err != nil {
-		logger.Error("Failed to load updated booking data", err)
-		return bc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
-			Status:  fiber.StatusInternalServerError,
-			Message: "Booking updated but failed to retrieve complete data",
-			Data:    nil,
-		})
-	}
-
-	return bc.sendResponseWithLog(c, fiber.StatusOK, types.ApiResponse{
-		Status:  fiber.StatusOK,
-		Message: "Booking delivery information updated successfully",
-		Data:    updatedBooking,
+	return bc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+		Status:  fiber.StatusInternalServerError,
+		Message: "Address not found for this booking",
+		Data:    nil,
 	})
+
 }
 
 // show indivisual booking info

@@ -8,20 +8,25 @@ import (
 )
 
 type BookingCreateRequest struct {
-	RequestID string `json:"request_id" validate:"required,min=1,max=255"`
-}
-
-// BookingCreateRequest represents the request payload for creating a booking
-type BookingStoreUpdateRequest struct {
-	// DeliveryBranchCode required
+	RequestID          string `json:"request_id" validate:"required,min=1,max=255"`
 	DeliveryBranchCode string `json:"delivery_branch_code" validate:"required,min=1,max=100"`
-	ReceiverName       string `json:"receiver_name" validate:"omitempty,max=255"`
 	Division           string `json:"division" validate:"required,min=1,max=255"`
 	District           string `json:"district" validate:"required,min=1,max=255"`
 	PoliceStation      string `json:"police_station" validate:"required,min=1,max=255"`
 	PostOffice         string `json:"post_office" validate:"required,min=1,max=255"`
 	StreetAddress      string `json:"street_address" validate:"required,min=1,max=255"`
-	AddressType        string `json:"address_type" validate:"required,oneof=home office"`
+}
+
+// BookingCreateRequest represents the request payload for creating a booking
+type BookingStoreUpdateRequest struct {
+	// DeliveryBranchCode required
+	ID                 uint   `json:"id" validate:"required"`
+	DeliveryBranchCode string `json:"delivery_branch_code" validate:"required,min=1,max=100"`
+	Division           string `json:"division" validate:"required,min=1,max=255"`
+	District           string `json:"district" validate:"required,min=1,max=255"`
+	PoliceStation      string `json:"police_station" validate:"required,min=1,max=255"`
+	PostOffice         string `json:"post_office" validate:"required,min=1,max=255"`
+	StreetAddress      string `json:"street_address" validate:"required,min=1,max=255"`
 }
 
 // use first step validation
@@ -37,9 +42,6 @@ func (b BookingStoreUpdateRequest) Validate() error {
 	if b.DeliveryBranchCode == "" {
 		return fmt.Errorf("deliveryBranchCode is required")
 	}
-	if b.ReceiverName == "" {
-		return fmt.Errorf("receiverName is required")
-	}
 	if b.Division == "" {
 		return fmt.Errorf("division is required")
 	}
@@ -54,9 +56,6 @@ func (b BookingStoreUpdateRequest) Validate() error {
 	}
 	if b.StreetAddress == "" {
 		return fmt.Errorf("streetAddress is required")
-	}
-	if b.AddressType != "home" && b.AddressType != "office" {
-		return fmt.Errorf("AddressType must be either 'home' or 'office'")
 	}
 	return nil
 }
