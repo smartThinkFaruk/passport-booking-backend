@@ -8,7 +8,7 @@ import (
 
 // SnapshotBookingToEvent writes a full snapshot of a Booking row into BookingEvent with the given event type.
 func SnapshotBookingToEvent(tx *gorm.DB, b *bookingModel.Booking, eventType string, updatedBy string) error {
-	// Make sure relateds are present for event row (User, AddressInfo)
+	// Make sure relateds are present for event row (User, DeliveryAddress)
 	// If caller already preloaded, these will be filled; else we fetch minimal required ids.
 	if err := tx.Preload("User").Preload("DeliveryAddress").First(b, b.ID).Error; err != nil {
 		return err

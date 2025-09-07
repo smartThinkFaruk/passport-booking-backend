@@ -759,7 +759,7 @@ func BookingDms(authHeader, barcode, orderID string) ([]byte, int, error) {
 	// Preload related data (adjust field names as per your model)
 	if err := db.
 		Preload("User").
-		Preload("AddressInfo").
+		Preload("DeliveryAddress").
 		Where("app_or_order_id = ?", orderID).
 		Where("status = ?", bookingModel.BookingStatusPreBooked).
 		First(&booking).Error; err != nil {

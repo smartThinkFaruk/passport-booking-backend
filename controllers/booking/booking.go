@@ -109,7 +109,7 @@ func (bc *BookingController) Index(c *fiber.Ctx) error {
 	userID := uint(userInfo.ID)
 
 	// Build query with filters and user restriction
-	query := bc.DB.Model(&bookingModel.Booking{}).Preload("User").Preload("AddressInfo").Where("user_id = ?", userID)
+	query := bc.DB.Model(&bookingModel.Booking{}).Preload("User").Preload("DeliveryAddress").Where("user_id = ?", userID)
 
 	// Apply status filter
 	if req.Status != "" {
@@ -553,7 +553,7 @@ func (bc *BookingController) Show(c *fiber.Ctx) error {
 	}
 
 	var booking bookingModel.Booking
-	if err := bc.DB.Preload("User").Preload("AddressInfo").First(&booking, bookingID).Error; err != nil {
+	if err := bc.DB.Preload("User").Preload("DeliveryAddress").First(&booking, bookingID).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return bc.sendResponseWithLog(c, fiber.StatusNotFound, types.ApiResponse{
 				Status:  fiber.StatusNotFound,
