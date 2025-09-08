@@ -101,6 +101,7 @@ func autoMigrate() error {
 	stage2Models := []interface{}{
 		&booking.Booking{},
 		&booking.BookingEvent{},
+		&booking.BookingStatusEvent{},
 		&otp.OTP{},
 		&otp.OTPEvent{},
 	}

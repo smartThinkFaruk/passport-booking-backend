@@ -34,6 +34,24 @@ func (b BookingCreateRequest) Validate() error {
 	if b.RequestID == "" {
 		return fmt.Errorf("RequestID is required")
 	}
+	if b.DeliveryBranchCode == "" {
+		return fmt.Errorf("deliveryBranchCode is required")
+	}
+	if b.Division == "" {
+		return fmt.Errorf("division is required")
+	}
+	if b.District == "" {
+		return fmt.Errorf("district is required")
+	}
+	if b.PoliceStation == "" {
+		return fmt.Errorf("policeStation is required")
+	}
+	if b.PostOffice == "" {
+		return fmt.Errorf("postOffice is required")
+	}
+	if b.StreetAddress == "" {
+		return fmt.Errorf("streetAddress is required")
+	}
 	return nil
 }
 

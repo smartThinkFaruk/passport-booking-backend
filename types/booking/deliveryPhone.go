@@ -9,7 +9,6 @@ import (
 // VerifyDeliveryPhoneRequest represents the request for verifying delivery phone for a booking
 type VerifyDeliveryPhoneRequest struct {
 	BookingID uint   `json:"booking_id" validate:"required"`
-	Phone     string `json:"phone" validate:"required,phone"`
 	Purpose   otp.OTPPurpose `json:"purpose" validate:"required"`
 	OTPCode   string `json:"otp_code" validate:"required,len=6"`
 }
@@ -17,12 +16,6 @@ type VerifyDeliveryPhoneRequest struct {
 func (r *VerifyDeliveryPhoneRequest) Validate() error {
 	if r.BookingID == 0 {
 		return fmt.Errorf("booking_id is required")
-	}
-	if r.Phone == "" {
-		return fmt.Errorf("phone is required")
-	}
-	if !utils.ValidatePhoneNumber(r.Phone) {
-		return fmt.Errorf("phone number is invalid")
 	}
 	if r.Purpose == "" {
 		return fmt.Errorf("purpose is required")
@@ -42,22 +35,15 @@ func (r *VerifyDeliveryPhoneRequest) Validate() error {
 }
 
 // UpdateDeliveryPhoneRequest represents the request for updating delivery phone
-type UpdateDeliveryPhoneRequest struct {
+type DeliveryPhoneSendOtpRequest struct {
 	BookingID     uint           `json:"booking_id" validate:"required"`
-	DeliveryPhone string         `json:"delivery_phone" validate:"required,phone"`
 	Purpose       otp.OTPPurpose `json:"purpose" validate:"required"`
 }
 
 // Validate validates the UpdateDeliveryPhoneRequest fields
-func (r *UpdateDeliveryPhoneRequest) Validate() error {
+func (r *DeliveryPhoneSendOtpRequest) Validate() error {
 	if r.BookingID == 0 {
 		return fmt.Errorf("booking_id is required")
-	}
-	if r.DeliveryPhone == "" {
-		return fmt.Errorf("delivery_phone is required")
-	}
-	if !utils.ValidatePhoneNumber(r.DeliveryPhone) {
-		return fmt.Errorf("delivery_phone number is invalid")
 	}
 
 	if r.Purpose == "" {
@@ -73,16 +59,12 @@ func (r *UpdateDeliveryPhoneRequest) Validate() error {
 // GetOTPRetryInfoRequest represents the request for getting OTP retry information
 type GetOTPRetryInfoRequest struct {
 	BookingID uint           `json:"booking_id" validate:"required"`
-	Phone   string         `json:"phone" validate:"required,phone"`
 	Purpose otp.OTPPurpose `json:"purpose" validate:"required"`
 }
 
 func (r *GetOTPRetryInfoRequest) Validate() error {
 	if r.BookingID == 0 {
 		return fmt.Errorf("booking_id is required")
-	}
-	if r.Phone != "" && !utils.ValidatePhoneNumber(r.Phone) {
-		return fmt.Errorf("phone number is invalid")
 	}
 	if r.Purpose == "" {
 		return fmt.Errorf("purpose is required")
@@ -97,19 +79,12 @@ func (r *GetOTPRetryInfoRequest) Validate() error {
 // ResendOTPRequest represents the request for resending OTP
 type ResendOTPRequest struct {
 	BookingID uint           `json:"booking_id" validate:"required"`
-	Phone     string         `json:"phone" validate:"required,phone"`
 	Purpose   otp.OTPPurpose `json:"purpose" validate:"required"`
 }
 
 func (r *ResendOTPRequest) Validate() error {
 	if r.BookingID == 0 {
 		return fmt.Errorf("booking_id is required")
-	}
-	if r.Phone == "" {
-		return fmt.Errorf("phone is required")
-	}
-	if !utils.ValidatePhoneNumber(r.Phone) {
-		return fmt.Errorf("phone number is invalid")
 	}
 	if r.Purpose == "" {
 		return fmt.Errorf("purpose is required")

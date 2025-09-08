@@ -72,7 +72,7 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	bookingGroup.Put("/update", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
 		constants.PermCustomerFull,
-	), bookingController.StoreUpdate)
+	), bookingController.Update)
 
 	bookingGroup.Get("/list", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
@@ -93,10 +93,10 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	===============================================================================*/
 
 	// Delivery phone management routes
-	bookingGroup.Post("/delivery-phone", middleware.RequirePermissions(
+	bookingGroup.Post("/delivery-phone-send-otp", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
 		constants.PermCustomerFull,
-	), bookingController.UpdateDeliveryPhone)
+	), bookingController.DeliveryPhoneSendOtp)
 
 	bookingGroup.Post("/verify-delivery-phone", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
