@@ -538,6 +538,7 @@ func AddItemToBag(c *fiber.Ctx) error {
 	// Update booking status to booked and save barcode
 	booking.Status = bookingModel.BookingStatusBooked
 	booking.Barcode = &barcode
+	booking.CurrentBagID = &reqBody.BagID
 	booking.BookingDate = time.Now()
 	booking.UpdatedBy = userID
 
