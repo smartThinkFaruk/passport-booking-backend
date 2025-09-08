@@ -554,6 +554,24 @@ func AddItemToBag(c *fiber.Ctx) error {
 		return nil
 	}
 
+	// Create booking status event for status change to booked
+	bookingStatusEvent := bookingModel.BookingStatusEvent{
+		BookingID: booking.ID,
+		Status:    booking.Status,
+		CreatedBy: userID,
+	}
+
+	if err := tx.Create(&bookingStatusEvent).Error; err != nil {
+		tx.Rollback()
+		errorResponse := types.ApiResponse{
+			Message: "Failed to create booking status event",
+			Status:  fiber.StatusInternalServerError,
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
+	}
+
 	// Create booking event for status change to booked and item added to bag
 	if err := booking_event.SnapshotBookingToEvent(tx, &booking, "booking_confirmed_and_item_added_to_bag", userID); err != nil {
 		tx.Rollback()
