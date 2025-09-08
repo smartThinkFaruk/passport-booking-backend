@@ -22,8 +22,6 @@ type BookingEvent struct {
 	FatherName   string  `gorm:"type:varchar(255);not null" json:"father_name"`
 	MotherName   string  `gorm:"type:varchar(255);not null" json:"mother_name"`
 	Phone        string  `gorm:"type:varchar(20);not null" json:"phone"`
-
-	ReceiverName  *string `gorm:"type:varchar(255)" json:"receiver_name,omitempty"`
 	DeliveryPhone *string `gorm:"type:varchar(20)" json:"delivery_phone"`
 
 	// keep field names consistent with Booking

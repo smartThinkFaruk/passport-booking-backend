@@ -24,8 +24,6 @@ func SnapshotBookingToEvent(tx *gorm.DB, b *bookingModel.Booking, eventType stri
 		FatherName:   b.FatherName,
 		MotherName:   b.MotherName,
 		Phone:        b.Phone,
-
-		ReceiverName:  b.ReceiverName,
 		DeliveryPhone: b.DeliveryPhone,
 
 		DeliveryPhoneAppliedVerified:       b.DeliveryPhoneAppliedVerified,
