@@ -88,6 +88,11 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 		constants.PermCustomerFull,
 	), bookingController.ParsePassportSlip)
 
+	bookingGroup.Get("/get-booking-status-event/:id", middleware.RequirePermissions(
+		constants.PermAgentHasFull,
+		constants.PermCustomerFull,
+	), bookingController.GetBookingStatusEvent)
+
 	/*=============================================================================
 	| OTP Routes for Booking
 	===============================================================================*/

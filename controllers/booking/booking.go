@@ -596,6 +596,32 @@ func (bc *BookingController) Show(c *fiber.Ctx) error {
 	})
 }
 
+func (bc *BookingController) GetBookingStatusEvent(c *fiber.Ctx) error {
+	bookingIDParam := c.Params("id")
+	bookingID, err := strconv.Atoi(bookingIDParam)
+	if err != nil || bookingID <= 0 {
+		return bc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Invalid booking ID",
+			Data:    nil,
+		})
+	}
+	var statusEvents []bookingModel.BookingStatusEvent
+	if err := bc.DB.Preload("Booking").Preload("Booking.User").Preload("Booking.DeliveryAddress").Where("booking_id = ?", bookingID).Order("created_at DESC").Find(&statusEvents).Error; err != nil {
+		logger.Error("Failed to fetch booking status events", err)
+		return bc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to fetch booking status events",
+			Data:    nil,
+		})
+	}
+	return bc.sendResponseWithLog(c, fiber.StatusOK, types.ApiResponse{
+		Status:  fiber.StatusOK,
+		Message: "Booking status events fetched successfully",
+		Data:    statusEvents,
+	})
+}
+
 // UpdateDeliveryPhone updates the delivery phone for a booking
 func (bc *BookingController) DeliveryPhoneSendOtp(c *fiber.Ctx) error {
 
@@ -701,8 +727,8 @@ func (bc *BookingController) DeliveryPhoneSendOtp(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := booking_event.SnapshotBookingToEvent(bc.DB, &booking, "delivery_phone_updated", strconv.FormatUint(uint64(booking.UserID), 10)); err != nil {
-		logger.Error("Failed to write booking event (delivery_phone_updated)", err)
+	if err := booking_event.SnapshotBookingToEvent(bc.DB, &booking, "delivery_phone_send_otp", strconv.FormatUint(uint64(booking.UserID), 10)); err != nil {
+		logger.Error("Failed to write booking event (delivery_phone_send_otp)", err)
 	}
 
 	// Send OTP to the new delivery phone

@@ -44,11 +44,10 @@ type BookingEvent struct {
 	Status      BookingStatus `gorm:"size:20;not null;default:initial" json:"status"`
 	BookingType BookingType   `gorm:"size:20" json:"booking_type"` // "agent" or "customer"
 	BookingDate time.Time     `gorm:"" json:"booking_date"`
+	EventType string `gorm:"type:varchar(50);not null;index" json:"event_type"` // created, updated, delivery_phone_send_otp, phone_applied_verified, otp_resent, etc.
 	CreatedBy   string        `gorm:"type:varchar(255);not null" json:"created_by"`
 	CreatedAt   time.Time     `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedBy   string        `gorm:"type:varchar(255)" json:"updated_by,omitempty"`
 	UpdatedAt   time.Time     `gorm:"autoUpdateTime" json:"updated_at"`
 	DeletedAt   *time.Time    `gorm:"index" json:"deleted_at,omitempty"`
-
-	EventType string `gorm:"type:varchar(50);not null;index" json:"event_type"` // created, updated, delivery_phone_updated, phone_applied_verified, otp_resent, etc.
 }
