@@ -36,11 +36,11 @@ type Booking struct {
 	DeliveryAddressID *uint            `json:"delivery_address_id,omitempty"`
 	DeliveryAddress   *address.Address `gorm:"foreignKey:DeliveryAddressID" json:"delivery_address,omitempty"`
 
-	Status      BookingStatus `gorm:"size:20;not null;default:initial" json:"status"`
-	BookingType BookingType   `gorm:"size:20" json:"booking_type"` // "agent" or "customer"
+	Status      BookingStatus `gorm:"size:20;not null;default:initial;index" json:"status"`
+	BookingType BookingType   `gorm:"size:20;index" json:"booking_type"` // "agent" or "customer"
 	BookingDate time.Time     `gorm:"autoCreateTime" json:"booking_date"`
 	CreatedBy   string        `gorm:"type:varchar(255);not null" json:"created_by"`
-	CreatedAt   time.Time     `gorm:"autoCreateTime" json:"created_at"`
+	CreatedAt   time.Time     `gorm:"autoCreateTime;index" json:"created_at"`
 	UpdatedBy   string        `gorm:"type:varchar(255)" json:"updated_by,omitempty"`
 	UpdatedAt   time.Time     `gorm:"autoUpdateTime" json:"updated_at"`
 	DeletedAt   *time.Time    `gorm:"index" json:"deleted_at,omitempty"` // Soft delete field

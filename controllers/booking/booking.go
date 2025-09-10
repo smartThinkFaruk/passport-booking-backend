@@ -50,6 +50,7 @@ func (bc *BookingController) sendResponseWithLog(c *fiber.Ctx, status int, respo
 	return result
 }
 
+// booking list with pagination and filters
 func (bc *BookingController) Index(c *fiber.Ctx) error {
 	// Parse query parameters
 	var req bookingTypes.BookingIndexRequest
@@ -596,6 +597,7 @@ func (bc *BookingController) Show(c *fiber.Ctx) error {
 	})
 }
 
+// booking status event history
 func (bc *BookingController) GetBookingStatusEvent(c *fiber.Ctx) error {
 	bookingIDParam := c.Params("id")
 	bookingID, err := strconv.Atoi(bookingIDParam)
