@@ -386,16 +386,46 @@ func CreateBag(c *fiber.Ctx) error {
 	// Parse the response to include it in our standardized format
 	var responseData interface{}
 	if jsonErr := json.Unmarshal(body, &responseData); jsonErr == nil {
-		successResponse := types.ApiResponse{
-			Message: "Bag created successfully",
-			Status:  resp.StatusCode,
-			Data:    responseData,
+		// Check if this is a success response (2xx status codes)
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			successResponse := types.ApiResponse{
+				Message: "Bag created successfully",
+				Status:  resp.StatusCode,
+				Data:    responseData,
+			}
+			c.Status(resp.StatusCode).JSON(successResponse)
+			// Serialize the response properly for logging
+			responseBytes, _ := json.Marshal(successResponse)
+			logRequest(c, string(responseBytes), requestBody)
+			return nil
+		} else {
+			// For error responses, extract the message from the response data if available
+			var message string = "Bag creation failed"
+
+			// Try to extract message from response data
+			if respMap, ok := responseData.(map[string]interface{}); ok {
+				if detail, exists := respMap["detail"]; exists {
+					if detailStr, ok := detail.(string); ok {
+						message = detailStr
+					}
+				} else if respMessage, exists := respMap["message"]; exists {
+					if msgStr, ok := respMessage.(string); ok {
+						message = msgStr
+					}
+				}
+			}
+
+			errorResponse := types.ApiResponse{
+				Message: message,
+				Status:  resp.StatusCode,
+				Data:    responseData,
+			}
+			c.Status(resp.StatusCode).JSON(errorResponse)
+			// Serialize the response properly for logging
+			responseBytes, _ := json.Marshal(errorResponse)
+			logRequest(c, string(responseBytes), requestBody)
+			return nil
 		}
-		c.Status(resp.StatusCode).JSON(successResponse)
-		// Serialize the response properly for logging
-		responseBytes, _ := json.Marshal(successResponse)
-		logRequest(c, string(responseBytes), requestBody)
-		return nil
 	}
 
 	// If JSON parsing fails, return the raw response
