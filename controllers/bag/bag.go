@@ -798,12 +798,12 @@ func BookingDms(authHeader, barcode, orderID string) ([]byte, int, error) {
 	receiverAddress := bagType.Address{
 		AddressType:   "home", // default value
 		Country:       "Bangladesh",
-		District:      "",
-		Division:      "",
+		District:      strPtrToStr(booking.DeliveryAddress.District),
+		Division:      strPtrToStr(booking.DeliveryAddress.Division),
 		PhoneNumber:   booking.Phone,
-		PoliceStation: "",
-		PostOffice:    "",
-		StreetAddress: "",
+		PoliceStation: strPtrToStr(booking.DeliveryAddress.PoliceStation),
+		PostOffice:    strPtrToStr(booking.DeliveryAddress.PostOffice),
+		StreetAddress: booking.Address,
 		UserUUID:      booking.User.Uuid,
 		Username:      booking.User.Username,
 		Zone:          "Zone 1",
