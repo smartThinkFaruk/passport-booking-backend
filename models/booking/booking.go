@@ -21,7 +21,7 @@ type Booking struct {
 	FatherName   string  `gorm:"type:varchar(255);not null" json:"father_name"`
 	MotherName   string  `gorm:"type:varchar(255);not null" json:"mother_name"`
 	Phone        string  `gorm:"type:varchar(20);not null" json:"phone"`
-	
+
 	DeliveryPhone                      *string `gorm:"type:varchar(20)" json:"delivery_phone"`
 	DeliveryPhoneAppliedVerified       bool    `gorm:"default:false" json:"delivery_phone_applied_verified"`
 	DeliveryPhoneAppliedOTPEncrypted   *string `gorm:"column:delivery_phone_apply_otp_encrypted;type:text" json:"delivery_phone_apply_otp_encrypted,omitempty"`
@@ -50,11 +50,12 @@ type Booking struct {
 type BookingStatus string
 
 const (
-	BookingStatusInitial   BookingStatus = "initial"
-	BookingStatusPreBooked BookingStatus = "pre_booked"
-	BookingStatusBooked    BookingStatus = "booked"
-	BookingStatusReturn    BookingStatus = "return"
-	BookingStatusDelivered BookingStatus = "delivered"
+	BookingStatusInitial           BookingStatus = "initial"
+	BookingStatusPreBooked         BookingStatus = "pre_booked"
+	BookingStatusBooked            BookingStatus = "booked"
+	BookingStatusReceivedByPostman BookingStatus = "received_by_postman"
+	BookingStatusReturn            BookingStatus = "return"
+	BookingStatusDelivered         BookingStatus = "delivered"
 )
 
 type BookingType string

@@ -7,7 +7,7 @@ func (bs BookingStatus) String() string {
 
 func (bs BookingStatus) IsValid() bool {
 	switch bs {
-	case BookingStatusInitial, BookingStatusPreBooked, BookingStatusBooked, BookingStatusReturn, BookingStatusDelivered:
+	case BookingStatusInitial, BookingStatusPreBooked, BookingStatusBooked, BookingStatusReceivedByPostman, BookingStatusReturn, BookingStatusDelivered:
 		return true
 	default:
 		return false
@@ -35,6 +35,7 @@ func GetAllBookingStatuses() []BookingStatus {
 		BookingStatusInitial,
 		BookingStatusPreBooked,
 		BookingStatusBooked,
+		BookingStatusReceivedByPostman,
 		BookingStatusReturn,
 		BookingStatusDelivered,
 	}

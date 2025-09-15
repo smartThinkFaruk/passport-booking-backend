@@ -16,9 +16,37 @@ import (
 	bagType "passport-booking/types/bag"
 	"passport-booking/utils"
 	"time"
-
+	"gorm.io/gorm"
 	"github.com/gofiber/fiber/v2"
 )
+
+type BagController struct {
+	DB             *gorm.DB
+	Logger         *logger.AsyncLogger
+	loggerInstance *logger.AsyncLogger
+}
+
+// NewBagController creates a new bag controller
+func NewBagController(db *gorm.DB, asyncLogger *logger.AsyncLogger) *BagController {
+	return &BagController{
+		DB:             db,
+		Logger:         asyncLogger,
+		loggerInstance: asyncLogger,
+	}
+}
+
+// Helper function to log API requests and responses
+func (bc *BagController) logAPIRequest(c *fiber.Ctx) {
+	logEntry := utils.CreateSanitizedLogEntry(c)
+	bc.loggerInstance.Log(logEntry)
+}
+
+// Helper function to send response and log in one call
+func (bc *BagController) sendResponseWithLog(c *fiber.Ctx, status int, response types.ApiResponse) error {
+	result := c.Status(status).JSON(response)
+	bc.logAPIRequest(c)
+	return result
+}
 
 func logRequest(c *fiber.Ctx, responseBody string, requestBody string) {
 	// Create AsyncLogger instance and start processor
@@ -153,132 +181,186 @@ func GetOperatorList(c *fiber.Ctx) error {
 }
 
 func CreateBranchMapping(c *fiber.Ctx) error {
-	// Capture the raw request body first
-	rawRequestBody := string(c.Body())
+    // Capture the raw request body first
+    rawRequestBody := string(c.Body())
 
-	var reqBody bagType.BranchMappingRequest
+    var reqBody bagType.BranchMappingRequest
 
-	authHeader := c.Get("Authorization")
-	if authHeader == "" {
-		errorResponse := types.ApiResponse{
-			Message: "Authorization header is required",
-			Status:  fiber.StatusUnauthorized,
-		}
-		c.Status(fiber.StatusUnauthorized).JSON(errorResponse)
-		logRequest(c, "", rawRequestBody)
-		return nil
-	}
+    authHeader := c.Get("Authorization")
+    if authHeader == "" {
+       errorResponse := types.ApiResponse{
+          Message: "Authorization header is required",
+          Status:  fiber.StatusUnauthorized,
+       }
+       c.Status(fiber.StatusUnauthorized).JSON(errorResponse)
+       logRequest(c, "", rawRequestBody)
+       return nil
+    }
 
-	if err := c.BodyParser(&reqBody); err != nil {
-		errorResponse := types.ApiResponse{
-			Message: "Invalid request body",
-			Status:  fiber.StatusBadRequest,
-		}
-		c.Status(fiber.StatusBadRequest).JSON(errorResponse)
-		logRequest(c, "", rawRequestBody)
-		return nil
-	}
+    if err := c.BodyParser(&reqBody); err != nil {
+       errorResponse := types.ApiResponse{
+          Message: "Invalid request body",
+          Status:  fiber.StatusBadRequest,
+       }
+       c.Status(fiber.StatusBadRequest).JSON(errorResponse)
+       logRequest(c, "", rawRequestBody)
+       return nil
+    }
 
-	// Convert parsed reqBody to JSON string for logging (with actual values)
-	requestBodyBytes, _ := json.Marshal(reqBody)
-	requestBody := string(requestBodyBytes)
+    // Convert parsed reqBody to JSON string for logging (with actual values)
+    requestBodyBytes, _ := json.Marshal(reqBody)
+    requestBody := string(requestBodyBytes)
 
-	payload := map[string]interface{}{
-		"username":     reqBody.Username,
-		"branch_code":  reqBody.BranchCode,
-		"relationship": reqBody.Relationship,
-	}
+    payload := map[string]interface{}{
+       "username":     reqBody.Username,
+       "branch_code":  reqBody.BranchCode,
+       "relationship": reqBody.Relationship,
+    }
 
-	jsonPayload, err := json.Marshal(payload)
-	if err != nil {
-		errorResponse := types.ApiResponse{
-			Message: "Failed to marshal payload",
-			Status:  fiber.StatusInternalServerError,
-		}
-		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
-		logRequest(c, "", requestBody)
-		return nil
-	}
+    jsonPayload, err := json.Marshal(payload)
+    if err != nil {
+       errorResponse := types.ApiResponse{
+          Message: "Failed to marshal payload",
+          Status:  fiber.StatusInternalServerError,
+       }
+       c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+       logRequest(c, "", requestBody)
+       return nil
+    }
 
-	baseURL := os.Getenv("DMS_BASE_URL")
-	//baseURL := "http://192.168.1.78:8002"
+    baseURL := os.Getenv("DMS_BASE_URL")
+    //baseURL := "http://192.168.1.78:8002"
 
-	if baseURL == "" {
-		errorResponse := types.ApiResponse{
-			Message: "DMS_BASE_URL not set in environment",
-			Status:  fiber.StatusInternalServerError,
-		}
-		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
-		logRequest(c, "", requestBody)
-		return nil
-	}
+    if baseURL == "" {
+       errorResponse := types.ApiResponse{
+          Message: "DMS_BASE_URL not set in environment",
+          Status:  fiber.StatusInternalServerError,
+       }
+       c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+       logRequest(c, "", requestBody)
+       return nil
+    }
 
-	url := fmt.Sprintf("%s/user/branch-user-mapping/", baseURL)
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
-	if err != nil {
-		errorResponse := types.ApiResponse{
-			Message: "Failed to create request",
-			Status:  fiber.StatusInternalServerError,
-		}
-		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
-		logRequest(c, "", requestBody)
-		return nil
-	}
+    url := fmt.Sprintf("%s/user/branch-user-mapping/", baseURL)
+    req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
+    if err != nil {
+       errorResponse := types.ApiResponse{
+          Message: "Failed to create request",
+          Status:  fiber.StatusInternalServerError,
+       }
+       c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+       logRequest(c, "", requestBody)
+       return nil
+    }
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", authHeader)
-	req.Header.Set("Accept", "application/json")
+    req.Header.Set("Content-Type", "application/json")
+    req.Header.Set("Authorization", authHeader)
+    req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		errorResponse := types.ApiResponse{
-			Message: "Failed to call external API",
-			Status:  fiber.StatusBadGateway,
-		}
-		c.Status(fiber.StatusBadGateway).JSON(errorResponse)
-		logRequest(c, "", requestBody)
-		return nil
-	}
-	defer resp.Body.Close()
+    client := &http.Client{}
+    resp, err := client.Do(req)
+    if err != nil {
+       errorResponse := types.ApiResponse{
+          Message: "Failed to call external API",
+          Status:  fiber.StatusBadGateway,
+       }
+       c.Status(fiber.StatusBadGateway).JSON(errorResponse)
+       logRequest(c, "", requestBody)
+       return nil
+    }
+    defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		errorResponse := types.ApiResponse{
-			Message: "Failed to read response",
-			Status:  fiber.StatusInternalServerError,
-		}
-		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
-		logRequest(c, "", requestBody)
-		return nil
-	}
+    body, err := io.ReadAll(resp.Body)
+    if err != nil {
+       errorResponse := types.ApiResponse{
+          Message: "Failed to read response",
+          Status:  fiber.StatusInternalServerError,
+       }
+       c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+       logRequest(c, "", requestBody)
+       return nil
+    }
 
-	// Parse the response to include it in our standardized format
-	var responseData interface{}
-	if jsonErr := json.Unmarshal(body, &responseData); jsonErr == nil {
-		successResponse := types.ApiResponse{
-			Message: "Branch mapping created successfully",
-			Status:  resp.StatusCode,
-			Data:    responseData,
-		}
-		c.Status(resp.StatusCode).JSON(successResponse)
-		// Serialize the response properly for logging
-		responseBytes, _ := json.Marshal(successResponse)
-		logRequest(c, string(responseBytes), requestBody)
-		return nil
-	}
+    // Parse the response to include it in our standardized format
+    var responseData interface{}
+    if jsonErr := json.Unmarshal(body, &responseData); jsonErr == nil {
+       // Check if the response indicates an authentication error
+       if resp.StatusCode == 401 {
+          errorResponse := types.ApiResponse{
+             Message: "Authentication failed - Invalid or missing credentials",
+             Status:  resp.StatusCode,
+             Data:    responseData,
+          }
+          c.Status(resp.StatusCode).JSON(errorResponse)
+          // Serialize the response properly for logging
+          responseBytes, _ := json.Marshal(errorResponse)
+          logRequest(c, string(responseBytes), requestBody)
+          return nil
+       }
 
-	// If JSON parsing fails, return the raw response
-	finalResponse := types.ApiResponse{
-		Message: "Branch mapping processed",
-		Status:  resp.StatusCode,
-		Data:    string(body),
-	}
-	c.Status(resp.StatusCode).JSON(finalResponse)
-	// Serialize the response properly for logging
-	responseBytes, _ := json.Marshal(finalResponse)
-	logRequest(c, string(responseBytes), requestBody)
-	return nil
+       // Check for other client errors (4xx) and server errors (5xx)
+       if resp.StatusCode >= 400 {
+          errorResponse := types.ApiResponse{
+             Message: "Branch mapping creation failed",
+             Status:  resp.StatusCode,
+             Data:    responseData,
+          }
+          c.Status(resp.StatusCode).JSON(errorResponse)
+          // Serialize the response properly for logging
+          responseBytes, _ := json.Marshal(errorResponse)
+          logRequest(c, string(responseBytes), requestBody)
+          return nil
+       }
+
+       // Success response (2xx status codes)
+       successResponse := types.ApiResponse{
+          Message: "Branch mapping created successfully",
+          Status:  resp.StatusCode,
+          Data:    responseData,
+       }
+       c.Status(resp.StatusCode).JSON(successResponse)
+       // Serialize the response properly for logging
+       responseBytes, _ := json.Marshal(successResponse)
+       logRequest(c, string(responseBytes), requestBody)
+       return nil
+    }
+
+    // If JSON parsing fails, handle based on status code
+    if resp.StatusCode == 401 {
+       errorResponse := types.ApiResponse{
+          Message: "Authentication failed - Invalid or missing credentials",
+          Status:  resp.StatusCode,
+          Data:    string(body),
+       }
+       c.Status(resp.StatusCode).JSON(errorResponse)
+       responseBytes, _ := json.Marshal(errorResponse)
+       logRequest(c, string(responseBytes), requestBody)
+       return nil
+    }
+
+    if resp.StatusCode >= 400 {
+       errorResponse := types.ApiResponse{
+          Message: "Branch mapping creation failed",
+          Status:  resp.StatusCode,
+          Data:    string(body),
+       }
+       c.Status(resp.StatusCode).JSON(errorResponse)
+       responseBytes, _ := json.Marshal(errorResponse)
+       logRequest(c, string(responseBytes), requestBody)
+       return nil
+    }
+
+    // If JSON parsing fails but status is success, return the raw response
+    finalResponse := types.ApiResponse{
+       Message: "Branch mapping processed",
+       Status:  resp.StatusCode,
+       Data:    string(body),
+    }
+    c.Status(resp.StatusCode).JSON(finalResponse)
+    // Serialize the response properly for logging
+    responseBytes, _ := json.Marshal(finalResponse)
+    logRequest(c, string(responseBytes), requestBody)
+    return nil
 }
 
 func CreateBag(c *fiber.Ctx) error {
@@ -1047,3 +1129,255 @@ func CloseBag(c *fiber.Ctx) error {
 	logRequest(c, string(responseBytes), requestBody)
 	return nil
 }
+
+func (bc *BagController) ReceiveBag(c *fiber.Ctx) error {
+	// Capture the raw request body first
+	rawRequestBody := string(c.Body())
+	var reqBody bagType.ReceiveBagRequest
+
+	authHeader := c.Get("Authorization")
+
+	if authHeader == "" {
+		errorResponse := types.ApiResponse{
+			Message: "Authorization header is required",
+			Status:  fiber.StatusUnauthorized,
+		}
+		c.Status(fiber.StatusUnauthorized).JSON(errorResponse)
+		logRequest(c, "", rawRequestBody)
+		return nil
+	}
+	if err := c.BodyParser(&reqBody); err != nil {
+		errorResponse := types.ApiResponse{
+			Message: "Invalid request body",
+			Status:  fiber.StatusBadRequest,
+		}
+		c.Status(fiber.StatusBadRequest).JSON(errorResponse)
+		logRequest(c, "", rawRequestBody)
+		return nil
+	}
+	requestBodyBytes, _ := json.Marshal(reqBody)
+	requestBody := string(requestBodyBytes)
+	payload := map[string]interface{}{
+		"bag_id":           reqBody.BagID,
+		"recv_instruction": reqBody.RecvInstruction,
+		"line_id":          reqBody.LineID,
+		"receive_items":    reqBody.ReceiveItems,
+	}
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		errorResponse := types.ApiResponse{
+			Message: "Failed to marshal payload",
+			Status:  fiber.StatusInternalServerError,
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
+	}
+	baseURL := os.Getenv("DMS_BASE_URL")
+	if baseURL == "" {
+		errorResponse := types.ApiResponse{
+			Message: "DMS_BASE_URL environment variable is not set",
+			Status:  fiber.StatusInternalServerError,
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
+	}
+	url := fmt.Sprintf("%s/rms/receive-bag/", baseURL)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		errorResponse := types.ApiResponse{
+			Message: "Failed to create request",
+			Status:  fiber.StatusInternalServerError,
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeader)
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		errorResponse := types.ApiResponse{
+			Message: "Failed to send request",
+			Status:  fiber.StatusInternalServerError,
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		errorResponse := types.ApiResponse{
+			Message: "Failed to read response",
+			Status:  fiber.StatusInternalServerError,
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
+	}
+
+	var responseData interface{}
+	if err := json.Unmarshal(body, &responseData); err != nil {
+		// If JSON decoding fails, return the raw response
+		finalResponse := types.ApiResponse{
+			Message: "Failed to decode response",
+			Status:  resp.StatusCode,
+			Data:    string(body),
+		}
+		c.Status(resp.StatusCode).JSON(finalResponse)
+		// Serialize the response properly for logging
+		responseBytes, _ := json.Marshal(finalResponse)
+		logRequest(c, string(responseBytes), requestBody)
+		return nil
+	}
+
+	// Check the response status code
+	if resp.StatusCode == http.StatusOK {
+		// Successfully received bag - now update all bookings with this bag ID
+		if err := bc.updateBookingsAfterBagReceived(reqBody.BagID, c); err != nil {
+			// Log the error but don't fail the main operation since bag was successfully received
+			fmt.Printf("Failed to update bookings after bag received: %v\n", err)
+		}
+
+		finalResponse := types.ApiResponse{
+			Message: "Bag received successfully",
+			Status:  resp.StatusCode,
+			Data:    responseData,
+		}
+		c.Status(resp.StatusCode).JSON(finalResponse)
+		// Serialize the response properly for logging
+		responseBytes, _ := json.Marshal(finalResponse)
+		logRequest(c, string(responseBytes), requestBody)
+		return nil
+	} else {
+		// For error responses, extract the message from the response data if available
+		var message string = "Bag reception failed"
+
+		// Try to extract message from response data
+		if respMap, ok := responseData.(map[string]interface{}); ok {
+			if respMessage, exists := respMap["message"]; exists {
+				if msgStr, ok := respMessage.(string); ok {
+					message = msgStr
+				}
+			}
+		}
+
+		errorResponse := types.ApiResponse{
+			Message: message,
+			Status:  resp.StatusCode,
+			Data:    responseData,
+		}
+		c.Status(resp.StatusCode).JSON(errorResponse)
+		// Serialize the response properly for logging
+		responseBytes, _ := json.Marshal(errorResponse)
+		logRequest(c, string(responseBytes), requestBody)
+		return nil
+	}
+}
+
+// and creates booking status events and booking snapshots for each booking
+func (bc *BagController) updateBookingsAfterBagReceived(bagID string, c *fiber.Ctx) error {
+	db := database.DB
+	if db == nil {
+		return fmt.Errorf("database connection not found")
+	}
+
+		// Get user authentication information
+	claims, ok := c.Locals("user").(map[string]interface{})
+	if !ok {
+		return bc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Message: "Invalid user claims",
+			Status:  fiber.StatusUnauthorized,
+			Data:    nil,
+		})
+	}
+
+	userUUID, ok := claims["uuid"].(string)
+	if !ok || userUUID == "" {
+		return bc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Message: "User UUID not found in token",
+			Status:  fiber.StatusUnauthorized,
+			Data:    nil,
+		})
+	}
+
+	userInfo, err := utils.GetUserByUUID(userUUID)
+	if err != nil {
+		logger.Error("Error finding user by UUID", err)
+		status := fiber.StatusInternalServerError
+		msg := "Database error"
+		if err.Error() == "user not found" {
+			status = fiber.StatusUnauthorized
+			msg = "User not found"
+		}
+		return bc.sendResponseWithLog(c, status, types.ApiResponse{
+			Message: msg,
+			Status:  status,
+			Data:    nil,
+		})
+	}
+
+	userID := uint(userInfo.ID)
+
+	// Find all bookings with the current bag ID
+	var bookings []bookingModel.Booking
+	if err := db.Where("current_bag_id = ?", bagID).Find(&bookings).Error; err != nil {
+		return fmt.Errorf("failed to find bookings with bag ID %s: %v", bagID, err)
+	}
+
+	if len(bookings) == 0 {
+		fmt.Printf("No bookings found with bag ID: %s\n", bagID)
+		return nil
+	}
+
+	// Use transaction to ensure all updates succeed together
+	tx := db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// Update each booking status and create events
+	for _, booking := range bookings {
+		// Update booking status to received_by_postman
+		booking.Status = bookingModel.BookingStatusReceivedByPostman
+		booking.UpdatedBy = fmt.Sprintf("%d", userID)
+
+		if err := tx.Save(&booking).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to update booking ID %d: %v", booking.ID, err)
+		}
+
+		// Create booking status event
+		bookingStatusEvent := bookingModel.BookingStatusEvent{
+			BookingID: booking.ID,
+			Status:    booking.Status,
+			CreatedBy: fmt.Sprintf("%d", userID),
+		}
+
+		if err := tx.Create(&bookingStatusEvent).Error; err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to create booking status event for booking ID %d: %v", booking.ID, err)
+		}
+
+		// Create booking snapshot event
+		if err := booking_event.SnapshotBookingToEvent(tx, &booking, "bag_received_by_postman", fmt.Sprintf("%d", userID)); err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to create booking event for booking ID %d: %v", booking.ID, err)
+		}
+	}
+
+	// Commit the transaction
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("failed to commit booking updates: %v", err)
+	}
+
+	fmt.Printf("Successfully updated %d bookings for bag ID %s to received_by_postman status\n", len(bookings), bagID)
+	return nil
+}
+

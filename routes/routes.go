@@ -20,6 +20,7 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	asyncLogger := logger.NewAsyncLogger(db)
 	authController := auth.NewAuthController(ssoClient, db, asyncLogger)
 	bookingController := booking.NewBookingController(db, asyncLogger)
+	bagController := bag.NewBagController(db, asyncLogger)
 
 	// Start the async logger processing goroutine
 	go asyncLogger.ProcessLog()
@@ -50,6 +51,8 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	bagGroup.Post("/create", middleware.RequirePermissions(constants.PermOperatorFull), bag.CreateBag)
 	bagGroup.Post("/item_add", middleware.RequirePermissions(constants.PermOperatorFull), bag.AddItemToBag)
 	bagGroup.Post("/close", middleware.RequirePermissions(constants.PermOperatorFull), bag.CloseBag)
+
+	bagGroup.Post("/receive", middleware.RequirePermissions(constants.PermPostmanFull), bagController.ReceiveBag)
 
 	/*=============================================================================
 	| Protected Routes

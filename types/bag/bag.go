@@ -76,3 +76,11 @@ type Booking struct {
 type CloseBagRequest struct {
 	BagID string `json:"bag_id"`
 }
+
+type ReceiveBagRequest struct {
+
+	BagID           string   `json:"bag_id"`
+	RecvInstruction string   `json:"recv_instruction"`
+	LineID          string   `json:"line_id"`
+	ReceiveItems    string   `json:"receive_items"`
+}
