@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
 	"io"
 	"net/http"
 	"os"
@@ -16,8 +18,6 @@ import (
 	bagType "passport-booking/types/bag"
 	"passport-booking/utils"
 	"time"
-	"gorm.io/gorm"
-	"github.com/gofiber/fiber/v2"
 )
 
 type BagController struct {
@@ -181,186 +181,186 @@ func GetOperatorList(c *fiber.Ctx) error {
 }
 
 func CreateBranchMapping(c *fiber.Ctx) error {
-    // Capture the raw request body first
-    rawRequestBody := string(c.Body())
+	// Capture the raw request body first
+	rawRequestBody := string(c.Body())
 
-    var reqBody bagType.BranchMappingRequest
+	var reqBody bagType.BranchMappingRequest
 
-    authHeader := c.Get("Authorization")
-    if authHeader == "" {
-       errorResponse := types.ApiResponse{
-          Message: "Authorization header is required",
-          Status:  fiber.StatusUnauthorized,
-       }
-       c.Status(fiber.StatusUnauthorized).JSON(errorResponse)
-       logRequest(c, "", rawRequestBody)
-       return nil
-    }
+	authHeader := c.Get("Authorization")
+	if authHeader == "" {
+		errorResponse := types.ApiResponse{
+			Message: "Authorization header is required",
+			Status:  fiber.StatusUnauthorized,
+		}
+		c.Status(fiber.StatusUnauthorized).JSON(errorResponse)
+		logRequest(c, "", rawRequestBody)
+		return nil
+	}
 
-    if err := c.BodyParser(&reqBody); err != nil {
-       errorResponse := types.ApiResponse{
-          Message: "Invalid request body",
-          Status:  fiber.StatusBadRequest,
-       }
-       c.Status(fiber.StatusBadRequest).JSON(errorResponse)
-       logRequest(c, "", rawRequestBody)
-       return nil
-    }
+	if err := c.BodyParser(&reqBody); err != nil {
+		errorResponse := types.ApiResponse{
+			Message: "Invalid request body",
+			Status:  fiber.StatusBadRequest,
+		}
+		c.Status(fiber.StatusBadRequest).JSON(errorResponse)
+		logRequest(c, "", rawRequestBody)
+		return nil
+	}
 
-    // Convert parsed reqBody to JSON string for logging (with actual values)
-    requestBodyBytes, _ := json.Marshal(reqBody)
-    requestBody := string(requestBodyBytes)
+	// Convert parsed reqBody to JSON string for logging (with actual values)
+	requestBodyBytes, _ := json.Marshal(reqBody)
+	requestBody := string(requestBodyBytes)
 
-    payload := map[string]interface{}{
-       "username":     reqBody.Username,
-       "branch_code":  reqBody.BranchCode,
-       "relationship": reqBody.Relationship,
-    }
+	payload := map[string]interface{}{
+		"username":     reqBody.Username,
+		"branch_code":  reqBody.BranchCode,
+		"relationship": reqBody.Relationship,
+	}
 
-    jsonPayload, err := json.Marshal(payload)
-    if err != nil {
-       errorResponse := types.ApiResponse{
-          Message: "Failed to marshal payload",
-          Status:  fiber.StatusInternalServerError,
-       }
-       c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
-       logRequest(c, "", requestBody)
-       return nil
-    }
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		errorResponse := types.ApiResponse{
+			Message: "Failed to marshal payload",
+			Status:  fiber.StatusInternalServerError,
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
+	}
 
-    baseURL := os.Getenv("DMS_BASE_URL")
-    //baseURL := "http://192.168.1.78:8002"
+	baseURL := os.Getenv("DMS_BASE_URL")
+	//baseURL := "http://192.168.1.78:8002"
 
-    if baseURL == "" {
-       errorResponse := types.ApiResponse{
-          Message: "DMS_BASE_URL not set in environment",
-          Status:  fiber.StatusInternalServerError,
-       }
-       c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
-       logRequest(c, "", requestBody)
-       return nil
-    }
+	if baseURL == "" {
+		errorResponse := types.ApiResponse{
+			Message: "DMS_BASE_URL not set in environment",
+			Status:  fiber.StatusInternalServerError,
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
+	}
 
-    url := fmt.Sprintf("%s/user/branch-user-mapping/", baseURL)
-    req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
-    if err != nil {
-       errorResponse := types.ApiResponse{
-          Message: "Failed to create request",
-          Status:  fiber.StatusInternalServerError,
-       }
-       c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
-       logRequest(c, "", requestBody)
-       return nil
-    }
+	url := fmt.Sprintf("%s/user/branch-user-mapping/", baseURL)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		errorResponse := types.ApiResponse{
+			Message: "Failed to create request",
+			Status:  fiber.StatusInternalServerError,
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
+	}
 
-    req.Header.Set("Content-Type", "application/json")
-    req.Header.Set("Authorization", authHeader)
-    req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeader)
+	req.Header.Set("Accept", "application/json")
 
-    client := &http.Client{}
-    resp, err := client.Do(req)
-    if err != nil {
-       errorResponse := types.ApiResponse{
-          Message: "Failed to call external API",
-          Status:  fiber.StatusBadGateway,
-       }
-       c.Status(fiber.StatusBadGateway).JSON(errorResponse)
-       logRequest(c, "", requestBody)
-       return nil
-    }
-    defer resp.Body.Close()
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		errorResponse := types.ApiResponse{
+			Message: "Failed to call external API",
+			Status:  fiber.StatusBadGateway,
+		}
+		c.Status(fiber.StatusBadGateway).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
+	}
+	defer resp.Body.Close()
 
-    body, err := io.ReadAll(resp.Body)
-    if err != nil {
-       errorResponse := types.ApiResponse{
-          Message: "Failed to read response",
-          Status:  fiber.StatusInternalServerError,
-       }
-       c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
-       logRequest(c, "", requestBody)
-       return nil
-    }
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		errorResponse := types.ApiResponse{
+			Message: "Failed to read response",
+			Status:  fiber.StatusInternalServerError,
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		logRequest(c, "", requestBody)
+		return nil
+	}
 
-    // Parse the response to include it in our standardized format
-    var responseData interface{}
-    if jsonErr := json.Unmarshal(body, &responseData); jsonErr == nil {
-       // Check if the response indicates an authentication error
-       if resp.StatusCode == 401 {
-          errorResponse := types.ApiResponse{
-             Message: "Authentication failed - Invalid or missing credentials",
-             Status:  resp.StatusCode,
-             Data:    responseData,
-          }
-          c.Status(resp.StatusCode).JSON(errorResponse)
-          // Serialize the response properly for logging
-          responseBytes, _ := json.Marshal(errorResponse)
-          logRequest(c, string(responseBytes), requestBody)
-          return nil
-       }
+	// Parse the response to include it in our standardized format
+	var responseData interface{}
+	if jsonErr := json.Unmarshal(body, &responseData); jsonErr == nil {
+		// Check if the response indicates an authentication error
+		if resp.StatusCode == 401 {
+			errorResponse := types.ApiResponse{
+				Message: "Authentication failed - Invalid or missing credentials",
+				Status:  resp.StatusCode,
+				Data:    responseData,
+			}
+			c.Status(resp.StatusCode).JSON(errorResponse)
+			// Serialize the response properly for logging
+			responseBytes, _ := json.Marshal(errorResponse)
+			logRequest(c, string(responseBytes), requestBody)
+			return nil
+		}
 
-       // Check for other client errors (4xx) and server errors (5xx)
-       if resp.StatusCode >= 400 {
-          errorResponse := types.ApiResponse{
-             Message: "Branch mapping creation failed",
-             Status:  resp.StatusCode,
-             Data:    responseData,
-          }
-          c.Status(resp.StatusCode).JSON(errorResponse)
-          // Serialize the response properly for logging
-          responseBytes, _ := json.Marshal(errorResponse)
-          logRequest(c, string(responseBytes), requestBody)
-          return nil
-       }
+		// Check for other client errors (4xx) and server errors (5xx)
+		if resp.StatusCode >= 400 {
+			errorResponse := types.ApiResponse{
+				Message: "Branch mapping creation failed",
+				Status:  resp.StatusCode,
+				Data:    responseData,
+			}
+			c.Status(resp.StatusCode).JSON(errorResponse)
+			// Serialize the response properly for logging
+			responseBytes, _ := json.Marshal(errorResponse)
+			logRequest(c, string(responseBytes), requestBody)
+			return nil
+		}
 
-       // Success response (2xx status codes)
-       successResponse := types.ApiResponse{
-          Message: "Branch mapping created successfully",
-          Status:  resp.StatusCode,
-          Data:    responseData,
-       }
-       c.Status(resp.StatusCode).JSON(successResponse)
-       // Serialize the response properly for logging
-       responseBytes, _ := json.Marshal(successResponse)
-       logRequest(c, string(responseBytes), requestBody)
-       return nil
-    }
+		// Success response (2xx status codes)
+		successResponse := types.ApiResponse{
+			Message: "Branch mapping created successfully",
+			Status:  resp.StatusCode,
+			Data:    responseData,
+		}
+		c.Status(resp.StatusCode).JSON(successResponse)
+		// Serialize the response properly for logging
+		responseBytes, _ := json.Marshal(successResponse)
+		logRequest(c, string(responseBytes), requestBody)
+		return nil
+	}
 
-    // If JSON parsing fails, handle based on status code
-    if resp.StatusCode == 401 {
-       errorResponse := types.ApiResponse{
-          Message: "Authentication failed - Invalid or missing credentials",
-          Status:  resp.StatusCode,
-          Data:    string(body),
-       }
-       c.Status(resp.StatusCode).JSON(errorResponse)
-       responseBytes, _ := json.Marshal(errorResponse)
-       logRequest(c, string(responseBytes), requestBody)
-       return nil
-    }
+	// If JSON parsing fails, handle based on status code
+	if resp.StatusCode == 401 {
+		errorResponse := types.ApiResponse{
+			Message: "Authentication failed - Invalid or missing credentials",
+			Status:  resp.StatusCode,
+			Data:    string(body),
+		}
+		c.Status(resp.StatusCode).JSON(errorResponse)
+		responseBytes, _ := json.Marshal(errorResponse)
+		logRequest(c, string(responseBytes), requestBody)
+		return nil
+	}
 
-    if resp.StatusCode >= 400 {
-       errorResponse := types.ApiResponse{
-          Message: "Branch mapping creation failed",
-          Status:  resp.StatusCode,
-          Data:    string(body),
-       }
-       c.Status(resp.StatusCode).JSON(errorResponse)
-       responseBytes, _ := json.Marshal(errorResponse)
-       logRequest(c, string(responseBytes), requestBody)
-       return nil
-    }
+	if resp.StatusCode >= 400 {
+		errorResponse := types.ApiResponse{
+			Message: "Branch mapping creation failed",
+			Status:  resp.StatusCode,
+			Data:    string(body),
+		}
+		c.Status(resp.StatusCode).JSON(errorResponse)
+		responseBytes, _ := json.Marshal(errorResponse)
+		logRequest(c, string(responseBytes), requestBody)
+		return nil
+	}
 
-    // If JSON parsing fails but status is success, return the raw response
-    finalResponse := types.ApiResponse{
-       Message: "Branch mapping processed",
-       Status:  resp.StatusCode,
-       Data:    string(body),
-    }
-    c.Status(resp.StatusCode).JSON(finalResponse)
-    // Serialize the response properly for logging
-    responseBytes, _ := json.Marshal(finalResponse)
-    logRequest(c, string(responseBytes), requestBody)
-    return nil
+	// If JSON parsing fails but status is success, return the raw response
+	finalResponse := types.ApiResponse{
+		Message: "Branch mapping processed",
+		Status:  resp.StatusCode,
+		Data:    string(body),
+	}
+	c.Status(resp.StatusCode).JSON(finalResponse)
+	// Serialize the response properly for logging
+	responseBytes, _ := json.Marshal(finalResponse)
+	logRequest(c, string(responseBytes), requestBody)
+	return nil
 }
 
 func CreateBag(c *fiber.Ctx) error {
@@ -1316,7 +1316,7 @@ func (bc *BagController) updateBookingsAfterBagReceived(bagID string, c *fiber.C
 		return fmt.Errorf("database connection not found")
 	}
 
-		// Get user authentication information
+	// Get user authentication information
 	claims, ok := c.Locals("user").(map[string]interface{})
 	if !ok {
 		return bc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
@@ -1353,6 +1353,8 @@ func (bc *BagController) updateBookingsAfterBagReceived(bagID string, c *fiber.C
 
 	userID := uint(userInfo.ID)
 
+	userPermission := userInfo.Permissions
+
 	// Find all bookings with the current bag ID
 	var bookings []bookingModel.Booking
 	if err := db.Where("current_bag_id = ?", bagID).Find(&bookings).Error; err != nil {
@@ -1374,8 +1376,22 @@ func (bc *BagController) updateBookingsAfterBagReceived(bagID string, c *fiber.C
 
 	// Update each booking status and create events
 	for _, booking := range bookings {
-		// Update booking status to received_by_postman
-		booking.Status = bookingModel.BookingStatusReceivedByPostman
+		// Update booking status based on user permissions
+		hasPostMasterPermission := false
+		for _, permission := range userPermission {
+			if permission == "passport-booking.post-master.full-permit" {
+				hasPostMasterPermission = true
+				break
+			}
+		}
+
+		if hasPostMasterPermission {
+			// User has full permission, allow status update
+			booking.Status = bookingModel.BookingStatusReceivedByPostMaster
+		} else {
+			booking.Status = bookingModel.BookingStatusReceivedByPostman
+		}
+
 		booking.UpdatedBy = fmt.Sprintf("%d", userID)
 
 		if err := tx.Save(&booking).Error; err != nil {
@@ -1410,4 +1426,3 @@ func (bc *BagController) updateBookingsAfterBagReceived(bagID string, c *fiber.C
 	fmt.Printf("Successfully updated %d bookings for bag ID %s to received_by_postman status\n", len(bookings), bagID)
 	return nil
 }
-

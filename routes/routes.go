@@ -52,7 +52,10 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	bagGroup.Post("/item_add", middleware.RequirePermissions(constants.PermOperatorFull), bag.AddItemToBag)
 	bagGroup.Post("/close", middleware.RequirePermissions(constants.PermOperatorFull), bag.CloseBag)
 
-	bagGroup.Post("/receive", middleware.RequirePermissions(constants.PermPostmanFull), bagController.ReceiveBag)
+	bagGroup.Post("/receive", middleware.RequirePermissions(
+		constants.PermPostmanFull,
+		constants.PermPostOfficeFull,
+	), bagController.ReceiveBag)
 
 	/*=============================================================================
 	| Protected Routes

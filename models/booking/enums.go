@@ -35,6 +35,7 @@ func GetAllBookingStatuses() []BookingStatus {
 		BookingStatusInitial,
 		BookingStatusPreBooked,
 		BookingStatusBooked,
+		BookingStatusReceivedByPostMaster,
 		BookingStatusReceivedByPostman,
 		BookingStatusReturn,
 		BookingStatusDelivered,
