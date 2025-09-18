@@ -259,14 +259,17 @@ func (bc *BookingController) Store(c *fiber.Ctx) error {
 
 	// Extract the role part (e.g., "customer" from "passport-booking.customer.full-permit")
 	var UserBookingType string
-	if len(userPermission) > 0 {
-		if permStr, ok := userPermission[0].(string); ok {
-			// Split by dots and get the middle part (index 1)
+	foundPermission := false
+	for _, perm := range userPermission {
+		permStr, ok := perm.(string)
+		if !ok {
+			continue
+		}
+		if strings.HasPrefix(permStr, "passport-booking.") {
 			parts := strings.Split(permStr, ".")
 			if len(parts) >= 2 {
 				prefix := parts[0]        // This will be "passport-booking"
 				extractedRole := parts[1] // This will be "customer" or "agent"
-
 				if prefix != "passport-booking" {
 					return bc.sendResponseWithLog(c, fiber.StatusForbidden, types.ApiResponse{
 						Message: "Invalid permission prefix",
@@ -286,10 +289,18 @@ func (bc *BookingController) Store(c *fiber.Ctx) error {
 						Data:    nil,
 					})
 				}
-
 				logger.Info(fmt.Sprintf("User role extracted: %s, mapped to BookingType: %s from permission: %s", extractedRole, UserBookingType, permStr))
+				foundPermission = true
+				break
 			}
 		}
+	}
+	if !foundPermission {
+		return bc.sendResponseWithLog(c, fiber.StatusForbidden, types.ApiResponse{
+			Message: "No valid passport-booking permission found",
+			Status:  fiber.StatusForbidden,
+			Data:    nil,
+		})
 	}
 
 	userID := uint(userInfo.ID)
