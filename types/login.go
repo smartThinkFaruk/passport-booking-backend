@@ -6,6 +6,11 @@ type LoginRequest struct {
 	Password    string `json:"password"`
 }
 
+type LoginDMSRequest struct {
+	UserName string `json:"username"` // Field to allow login via email or phone
+	Password string `json:"password"`
+}
+
 type ErrorResponse struct {
 	Message string `json:"message"`
 	Status  int    `json:"status"`

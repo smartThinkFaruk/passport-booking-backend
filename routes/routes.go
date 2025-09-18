@@ -16,9 +16,10 @@ import (
 )
 
 func SetupRoutes(app *fiber.App, db *gorm.DB) {
-	ssoClient := httpServices.NewClient(os.Getenv("SSO_BASE_URL"))
+	//ssoClient := httpServices.NewClient(os.Getenv("SSO_BASE_URL"))
+	dmsClient := httpServices.NewClient(os.Getenv("DMS_BASE_URL"))
 	asyncLogger := logger.NewAsyncLogger(db)
-	authController := auth.NewAuthController(ssoClient, db, asyncLogger)
+	authController := auth.NewAuthController(dmsClient, db, asyncLogger)
 	bookingController := booking.NewBookingController(db, asyncLogger)
 	bagController := bag.NewBagController(db, asyncLogger)
 

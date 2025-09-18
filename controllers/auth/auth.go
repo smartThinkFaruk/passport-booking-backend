@@ -179,7 +179,7 @@ func (h *AuthController) Register(c *fiber.Ctx) error {
 }
 
 func (h *AuthController) Login(c *fiber.Ctx) error {
-	var req types.LoginRequest
+	var req types.LoginDMSRequest
 	if err := c.BodyParser(&req); err != nil {
 		logger.Error("Error parsing request body", err)
 		response := types.ApiResponse{
@@ -191,21 +191,20 @@ func (h *AuthController) Login(c *fiber.Ctx) error {
 	}
 
 	// Validate request
-	if validationError := req.Validate(); validationError != "" {
-		logger.Error(validationError, nil)
-		response := types.ApiResponse{
-			Message: validationError,
-			Status:  fiber.StatusBadRequest,
-			Data:    nil,
-		}
-		return c.Status(fiber.StatusBadRequest).JSON(response)
-	}
+	//if validationError := req.Validate(); validationError != "" {
+	//	logger.Error(validationError, nil)
+	//	response := types.ApiResponse{
+	//		Message: validationError,
+	//		Status:  fiber.StatusBadRequest,
+	//		Data:    nil,
+	//	}
+	//	return c.Status(fiber.StatusBadRequest).JSON(response)
+	//}
 
 	// Make call to external API through the service
-	loginResponse, err := h.httpService.RequestLoginUser(types.LoginRequest{
-		PhoneNumber: req.PhoneNumber,
-		Redirect:    req.Redirect,
-		Password:    req.Password,
+	loginResponse, err := h.httpService.RequestDMSLoginUser(types.LoginDMSRequest{
+		UserName: req.UserName,
+		Password: req.Password,
 	})
 	if err != nil {
 		logger.Error("Failed to login user", err)
@@ -219,6 +218,7 @@ func (h *AuthController) Login(c *fiber.Ctx) error {
 
 	// Check if user exists in local database, create if not exists
 	if loginResponse.Status == "success" && loginResponse.Data.UUID != "" {
+		fmt.Println("Login Response Data: ")
 		var existingUser user.User
 		result := database.DB.Where("uuid = ?", loginResponse.Data.UUID).First(&existingUser)
 
@@ -261,6 +261,7 @@ func (h *AuthController) Login(c *fiber.Ctx) error {
 		}
 	}
 
+	fmt.Println("Login Response Data: Milon ", loginResponse)
 	// Set HTTP-only secure cookies for access and refresh tokens
 	if loginResponse.Access != "" {
 		h.setSecureCookie(c, "access", loginResponse.Access, 8*60*60) // 8 hours
