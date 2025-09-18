@@ -1379,7 +1379,7 @@ func (bc *BagController) updateBookingsAfterBagReceived(bagID string, c *fiber.C
 		// Update booking status based on user permissions
 		hasPostMasterPermission := false
 		for _, permission := range userPermission {
-			if permission == "passport-booking.post-master.full-permit" {
+			if permission == "passport-booking.postmaster.full-permit" {
 				hasPostMasterPermission = true
 				break
 			}
@@ -1391,7 +1391,6 @@ func (bc *BagController) updateBookingsAfterBagReceived(bagID string, c *fiber.C
 		} else {
 			booking.Status = bookingModel.BookingStatusReceivedByPostman
 		}
-
 		booking.UpdatedBy = fmt.Sprintf("%d", userID)
 
 		if err := tx.Save(&booking).Error; err != nil {
