@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"passport-booking/types"
 	"time"
@@ -83,6 +84,47 @@ func (c *SSOClient) RequestLoginUser(req types.LoginRequest) (*types.LoginUserRe
 		return nil, err
 	}
 
+	return &apiResp, nil
+}
+
+func (c *SSOClient) RequestDMSLoginUser(req types.LoginDMSRequest) (*types.LoginUserResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq, err := http.NewRequest("POST", c.baseURL+"/user/rms-user-land/", bytes.NewBuffer(body))
+	if err != nil {
+		return nil, err
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// Read response body for debugging
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	// Restore the response body for JSON decoding
+	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return nil, errors.New("SSO Login API returned non-OK status: " + resp.Status)
+	}
+
+	var apiResp types.LoginUserResponse
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		return nil, err
+	}
+
+	// Print the decoded response structure
 	return &apiResp, nil
 }
 
