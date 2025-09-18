@@ -179,7 +179,7 @@ func (h *AuthController) Register(c *fiber.Ctx) error {
 }
 
 func (h *AuthController) Login(c *fiber.Ctx) error {
-	var req types.LoginRequest
+	var req types.LoginDMSRequest
 	if err := c.BodyParser(&req); err != nil {
 		logger.Error("Error parsing request body", err)
 		response := types.ApiResponse{
@@ -191,21 +191,20 @@ func (h *AuthController) Login(c *fiber.Ctx) error {
 	}
 
 	// Validate request
-	if validationError := req.Validate(); validationError != "" {
-		logger.Error(validationError, nil)
-		response := types.ApiResponse{
-			Message: validationError,
-			Status:  fiber.StatusBadRequest,
-			Data:    nil,
-		}
-		return c.Status(fiber.StatusBadRequest).JSON(response)
-	}
+	//if validationError := req.Validate(); validationError != "" {
+	//	logger.Error(validationError, nil)
+	//	response := types.ApiResponse{
+	//		Message: validationError,
+	//		Status:  fiber.StatusBadRequest,
+	//		Data:    nil,
+	//	}
+	//	return c.Status(fiber.StatusBadRequest).JSON(response)
+	//}
 
 	// Make call to external API through the service
-	loginResponse, err := h.httpService.RequestLoginUser(types.LoginRequest{
-		PhoneNumber: req.PhoneNumber,
-		Redirect:    req.Redirect,
-		Password:    req.Password,
+	loginResponse, err := h.httpService.RequestDMSLoginUser(types.LoginDMSRequest{
+		UserName: req.UserName,
+		Password: req.Password,
 	})
 	if err != nil {
 		logger.Error("Failed to login user", err)
@@ -218,29 +217,30 @@ func (h *AuthController) Login(c *fiber.Ctx) error {
 	currentTime := time.Now().Format("2006-01-02 03:04:05 PM")
 
 	// Check if user exists in local database, create if not exists
-	if loginResponse.Status == "success" && loginResponse.Data.UUID != "" {
+	if loginResponse.Status == "success" && loginResponse.User.UUID != "" {
+		fmt.Println("Login Response Data: ")
 		var existingUser user.User
-		result := database.DB.Where("uuid = ?", loginResponse.Data.UUID).First(&existingUser)
+		result := database.DB.Where("uuid = ?", loginResponse.User.UUID).First(&existingUser)
 
 		if result.Error != nil {
 			// User doesn't exist, create new user
 			newUser := user.User{
-				Uuid:          loginResponse.Data.UUID,
-				Username:      loginResponse.Data.Username,
-				Phone:         loginResponse.Data.Phone,
-				PhoneVerified: loginResponse.Data.PhoneVerified,
-				EmailVerified: loginResponse.Data.EmailVerified,
-				Avatar:        loginResponse.Data.Avatar,
-				Nonce:         loginResponse.Data.Nonce,
-				Permissions:   user.StringSlice(loginResponse.Data.Permissions),
+				Uuid:          loginResponse.User.UUID,
+				Username:      loginResponse.User.Username,
+				Phone:         loginResponse.User.Phone,
+				PhoneVerified: loginResponse.User.PhoneVerified,
+				EmailVerified: loginResponse.User.EmailVerified,
+				Avatar:        loginResponse.User.Avatar,
+				Nonce:         loginResponse.User.Nonce,
+				Permissions:   user.StringSlice(loginResponse.User.Permissions),
 			}
 
 			// Handle nullable fields
-			if loginResponse.Data.LegalName != nil {
-				newUser.LegalName = *loginResponse.Data.LegalName
+			if loginResponse.User.LegalName != nil {
+				newUser.LegalName = *loginResponse.User.LegalName
 			}
-			if loginResponse.Data.Email != nil && *loginResponse.Data.Email != "" {
-				newUser.Email = loginResponse.Data.Email
+			if loginResponse.User.Email != nil && *loginResponse.User.Email != "" {
+				newUser.Email = loginResponse.User.Email
 			}
 			// Email remains nil if not provided or empty
 
@@ -260,14 +260,13 @@ func (h *AuthController) Login(c *fiber.Ctx) error {
 			fmt.Printf("User already exists in local database. UUID: %s\n", existingUser.Uuid)
 		}
 	}
-
 	// Set HTTP-only secure cookies for access and refresh tokens
-	if loginResponse.Access != "" {
-		h.setSecureCookie(c, "access", loginResponse.Access, 8*60*60) // 8 hours
+	if loginResponse.SSOAccessToken != "" {
+		h.setSecureCookie(c, "access", loginResponse.SSOAccessToken, 8*60*60) // 8 hours
 	}
 
-	if loginResponse.Refresh != "" {
-		h.setSecureCookie(c, "refresh", loginResponse.Refresh, 7*24*60*60) // 7 days
+	if loginResponse.SSORefreshToken != "" {
+		h.setSecureCookie(c, "refresh", loginResponse.SSORefreshToken, 7*24*60*60) // 7 days
 	}
 
 	// Marshal loginResponse to JSON string for logging
@@ -281,7 +280,7 @@ func (h *AuthController) Login(c *fiber.Ctx) error {
 	logEntry := utils.CreateSanitizedLogEntryWithCustomBody(c, string(c.Body()), responseBodyStr)
 	h.loggerInstance.Log(logEntry)
 
-	logger.Success("User logged in successfully. uuid: " + loginResponse.Data.UUID + " at " + currentTime)
+	logger.Success("User logged in successfully. uuid: " + loginResponse.User.UUID + " at " + currentTime)
 	return c.Status(fiber.StatusOK).JSON(loginResponse)
 }
 

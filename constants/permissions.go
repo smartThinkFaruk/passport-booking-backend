@@ -6,7 +6,7 @@ const (
 	PermSuperAdminFull    = "passport-booking.super-admin.full-permit"
 	PermEkdakDPMGFull     = "ekdak.dpmg.full-permit"
 	PermPassportDPMGFull  = "passport-booking.dpmg.full-permit"
-	PermPostOfficeFull    = "passport-booking.post-master.full-permit"
+	PermPostOfficeFull    = "passport-booking.postmaster.full-permit"
 	PermOrgSupervisorFull = "passport-booking.supervisor.full-permit"
 	PermOperatorFull      = "passport-booking.operator.full-permit"
 	PermAgentHasFull      = "passport-booking.agent.full-permit"

@@ -16,9 +16,10 @@ import (
 )
 
 func SetupRoutes(app *fiber.App, db *gorm.DB) {
-	ssoClient := httpServices.NewClient(os.Getenv("SSO_BASE_URL"))
+	//ssoClient := httpServices.NewClient(os.Getenv("SSO_BASE_URL"))
+	dmsClient := httpServices.NewClient(os.Getenv("DMS_BASE_URL"))
 	asyncLogger := logger.NewAsyncLogger(db)
-	authController := auth.NewAuthController(ssoClient, db, asyncLogger)
+	authController := auth.NewAuthController(dmsClient, db, asyncLogger)
 	bookingController := booking.NewBookingController(db, asyncLogger)
 	bagController := bag.NewBagController(db, asyncLogger)
 
@@ -52,7 +53,10 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	bagGroup.Post("/item_add", middleware.RequirePermissions(constants.PermOperatorFull), bag.AddItemToBag)
 	bagGroup.Post("/close", middleware.RequirePermissions(constants.PermOperatorFull), bag.CloseBag)
 
-	bagGroup.Post("/receive", middleware.RequirePermissions(constants.PermPostmanFull), bagController.ReceiveBag)
+	bagGroup.Post("/receive", middleware.RequirePermissions(
+		constants.PermPostmanFull,
+		constants.PermPostOfficeFull,
+	), bagController.ReceiveBag)
 
 	/*=============================================================================
 	| Protected Routes

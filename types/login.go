@@ -6,18 +6,25 @@ type LoginRequest struct {
 	Password    string `json:"password"`
 }
 
+type LoginDMSRequest struct {
+	UserName string `json:"username"` // Field to allow login via email or phone
+	Password string `json:"password"`
+}
+
 type ErrorResponse struct {
 	Message string `json:"message"`
 	Status  int    `json:"status"`
 }
 
 type LoginUserResponse struct {
-	Status  string        `json:"status"`
-	Type    string        `json:"type"`
-	Message string        `json:"message"`
-	Data    UserLoginData `json:"data"`
-	Refresh string        `json:"refresh"`
-	Access  string        `json:"access"`
+	Status          string        `json:"status"`
+	DMSToken        string        `json:"dms_token"`
+	RMSCode         string        `json:"rms_code"`
+	BranchCode      string        `json:"branch_code"`
+	UserGroup       string        `json:"user_group"`
+	User            UserLoginData `json:"user"`
+	SSOAccessToken  string        `json:"sso_access_token"`
+	SSORefreshToken string        `json:"sso_refresh_token"`
 }
 
 type CreatedByData struct {
@@ -47,8 +54,6 @@ type UserLoginData struct {
 	CreatedBy     *CreatedByData  `json:"created_by"`
 	ApprovedBy    *ApprovedByData `json:"approved_by"`
 	Permissions   []string        `json:"permissions"`
-	Refresh       string          `json:"refresh"`
-	Access        string          `json:"access"`
 }
 
 // custom error message
