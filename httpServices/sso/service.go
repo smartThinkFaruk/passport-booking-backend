@@ -112,13 +112,8 @@ func (c *SSOClient) RequestDMSLoginUser(req types.LoginDMSRequest) (*types.Login
 		return nil, err
 	}
 
-	// Print full response data in JSON format
-	fmt.Printf("Response Status: %s\n", resp.Status)
-	fmt.Printf("Response Headers: %+v\n", resp.Header)
-	fmt.Printf("Response Body: %s\n", string(bodyBytes))
-
 	// Restore the response body for JSON decoding
-	//resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
+	resp.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return nil, errors.New("SSO Login API returned non-OK status: " + resp.Status)
