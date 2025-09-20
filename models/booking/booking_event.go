@@ -15,13 +15,13 @@ type BookingEvent struct {
 	User   user.User `gorm:"foreignKey:UserID" json:"user"`
 
 	// DO NOT make this unique here (events are many per booking)
-	AppOrOrderID string  `gorm:"type:varchar(255);not null;index" json:"app_or_order_id"`
-	CurrentBagID *string `gorm:"type:varchar(255);index" json:"current_bag_id,omitempty"`
-	Barcode      *string `gorm:"type:varchar(255);index" json:"barcode,omitempty"`
-	Name         string  `gorm:"type:varchar(255);not null" json:"name"`
-	FatherName   string  `gorm:"type:varchar(255);not null" json:"father_name"`
-	MotherName   string  `gorm:"type:varchar(255);not null" json:"mother_name"`
-	Phone        string  `gorm:"type:varchar(20);not null" json:"phone"`
+	AppOrOrderID  string  `gorm:"type:varchar(255);not null;index" json:"app_or_order_id"`
+	CurrentBagID  *string `gorm:"type:varchar(255);index" json:"current_bag_id,omitempty"`
+	Barcode       *string `gorm:"type:varchar(255);index" json:"barcode,omitempty"`
+	Name          string  `gorm:"type:varchar(255);not null" json:"name"`
+	FatherName    string  `gorm:"type:varchar(255);not null" json:"father_name"`
+	MotherName    string  `gorm:"type:varchar(255);not null" json:"mother_name"`
+	Phone         string  `gorm:"type:varchar(20);not null" json:"phone"`
 	DeliveryPhone *string `gorm:"type:varchar(20)" json:"delivery_phone"`
 
 	// keep field names consistent with Booking
@@ -39,10 +39,10 @@ type BookingEvent struct {
 	DeliveryAddressID *uint            `gorm:"" json:"delivery_address_id,omitempty"`
 	DeliveryAddress   *address.Address `gorm:"foreignKey:DeliveryAddressID" json:"delivery_address,omitempty"`
 
-	Status      BookingStatus `gorm:"size:20;not null;default:initial;index" json:"status"`
+	Status      BookingStatus `gorm:"size:30;not null;default:initial;index" json:"status"`
 	BookingType BookingType   `gorm:"size:20;index" json:"booking_type"` // "agent" or "customer"
 	BookingDate time.Time     `gorm:"index" json:"booking_date"`
-	EventType string `gorm:"type:varchar(50);not null;index" json:"event_type"` // created, updated, delivery_phone_send_otp, phone_applied_verified, otp_resent, etc.
+	EventType   string        `gorm:"type:varchar(50);not null;index" json:"event_type"` // created, updated, delivery_phone_send_otp, phone_applied_verified, otp_resent, etc.
 	CreatedBy   string        `gorm:"type:varchar(255);not null" json:"created_by"`
 	CreatedAt   time.Time     `gorm:"autoCreateTime;index" json:"created_at"`
 	UpdatedBy   string        `gorm:"type:varchar(255)" json:"updated_by,omitempty"`

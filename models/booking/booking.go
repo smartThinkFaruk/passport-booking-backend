@@ -36,7 +36,7 @@ type Booking struct {
 	DeliveryAddressID *uint            `json:"delivery_address_id,omitempty"`
 	DeliveryAddress   *address.Address `gorm:"foreignKey:DeliveryAddressID" json:"delivery_address,omitempty"`
 
-	Status      BookingStatus `gorm:"size:20;not null;default:initial;index" json:"status"`
+	Status      BookingStatus `gorm:"size:30;not null;default:initial;index" json:"status"`
 	BookingType BookingType   `gorm:"size:20;index" json:"booking_type"` // "agent" or "customer"
 	BookingDate time.Time     `gorm:"autoCreateTime" json:"booking_date"`
 	CreatedBy   string        `gorm:"type:varchar(255);not null" json:"created_by"`

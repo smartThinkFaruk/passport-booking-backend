@@ -12,7 +12,7 @@ type BookingStatusEvent struct {
 	BookingID uint    `gorm:"not null;index" json:"booking_id"`
 	Booking   Booking `gorm:"foreignKey:BookingID" json:"booking"`
 
-	Status    BookingStatus `gorm:"size:20;not null;index" json:"status"`
+	Status    BookingStatus `gorm:"size:30;not null;index" json:"status"`
 	CreatedBy string        `gorm:"type:varchar(255);not null" json:"created_by"`
 	CreatedAt time.Time     `gorm:"autoCreateTime;index" json:"created_at"`
 	UpdatedAt time.Time     `gorm:"autoUpdateTime" json:"updated_at"`
