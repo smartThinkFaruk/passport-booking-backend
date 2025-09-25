@@ -6,6 +6,7 @@ import (
 	"passport-booking/controllers/auth"
 	"passport-booking/controllers/bag"
 	"passport-booking/controllers/booking"
+	"passport-booking/controllers/delivery"
 	"passport-booking/controllers/user"
 	httpServices "passport-booking/httpServices/sso"
 	"passport-booking/logger"
@@ -22,6 +23,7 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	authController := auth.NewAuthController(dmsClient, db, asyncLogger)
 	bookingController := booking.NewBookingController(db, asyncLogger)
 	bagController := bag.NewBagController(db, asyncLogger)
+	deliveryController := delivery.NewDeliveryController(db, asyncLogger)
 
 	// Start the async logger processing goroutine
 	go asyncLogger.ProcessLog()
@@ -125,4 +127,16 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 		constants.PermCustomerFull,
 	), bookingController.ResendOTP)
 
+	/*=============================================================================
+	| OTP Routes for Delivery Confirmation
+	===============================================================================*/
+	deliveredGroup := api.Group("/delivered")
+
+	deliveredGroup.Post("/send-otp", middleware.RequirePermissions(
+		constants.PermPostmanFull,
+	), deliveryController.DeliveryConfirmationSendOtp)
+
+	deliveredGroup.Post("/verify-otp", middleware.RequirePermissions(
+		constants.PermPostmanFull,
+	), deliveryController.DeliveryConfirmationVerifyOtp)
 }

@@ -1,0 +1,438 @@
+package delivery
+
+import (
+	"fmt"
+	"github.com/gofiber/fiber/v2"
+	"gorm.io/gorm"
+	"passport-booking/logger"
+	bookingModel "passport-booking/models/booking"
+	"passport-booking/services/booking_event"
+	otpService "passport-booking/services/otp"
+	"passport-booking/types"
+	deliveryTypes "passport-booking/types/delivery"
+	"passport-booking/utils"
+	"strconv"
+)
+
+// DeliveryController handles delivery-related HTTP requests
+type DeliveryController struct {
+	DB             *gorm.DB
+	Logger         *logger.AsyncLogger
+	loggerInstance *logger.AsyncLogger
+}
+
+// NewDeliveryController creates a new delivery controller
+func NewDeliveryController(db *gorm.DB, asyncLogger *logger.AsyncLogger) *DeliveryController {
+	return &DeliveryController{
+		DB:             db,
+		Logger:         asyncLogger,
+		loggerInstance: asyncLogger,
+	}
+}
+
+// Helper function to log API requests and responses
+func (dc *DeliveryController) logAPIRequest(c *fiber.Ctx) {
+	logEntry := utils.CreateSanitizedLogEntry(c)
+	dc.loggerInstance.Log(logEntry)
+}
+
+// Helper function to send response and log in one call
+func (dc *DeliveryController) sendResponseWithLog(c *fiber.Ctx, status int, response types.ApiResponse) error {
+	result := c.Status(status).JSON(response)
+	dc.logAPIRequest(c)
+	return result
+}
+
+// DeliveryConfirmationSendOtp sends an OTP for delivery confirmation
+func (dc *DeliveryController) DeliveryConfirmationSendOtp(c *fiber.Ctx) error {
+	var req deliveryTypes.DeliveryPhoneSendOtpRequest
+	if err := c.BodyParser(&req); err != nil {
+		logger.Error("Failed to parse request body", err)
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Invalid request body",
+			Data:    nil,
+		})
+	}
+
+	// Validate request using the validation method from types
+	if err := req.Validate(); err != nil {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: err.Error(),
+			Data:    nil,
+		})
+	}
+
+	// Get user authentication information (postman user)
+	claims, ok := c.Locals("user").(map[string]interface{})
+	if !ok {
+		return dc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Message: "Invalid user claims",
+			Status:  fiber.StatusUnauthorized,
+			Data:    nil,
+		})
+	}
+
+	userUUID, ok := claims["uuid"].(string)
+	if !ok || userUUID == "" {
+		return dc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Message: "User UUID not found in token",
+			Status:  fiber.StatusUnauthorized,
+			Data:    nil,
+		})
+	}
+
+	// Get postman user info
+	postmanInfo, err := utils.GetUserByUUID(userUUID)
+	if err != nil {
+		logger.Error("Error finding postman by UUID", err)
+		status := fiber.StatusInternalServerError
+		msg := "Database error"
+		if err.Error() == "user not found" {
+			status = fiber.StatusUnauthorized
+			msg = "Postman not found"
+		}
+		return dc.sendResponseWithLog(c, status, types.ApiResponse{
+			Message: msg,
+			Status:  status,
+			Data:    nil,
+		})
+	}
+
+	// Find the booking by barcode
+	var booking bookingModel.Booking
+	if err := dc.DB.Preload("User").Where("barcode = ?", req.BookingID).First(&booking).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return dc.sendResponseWithLog(c, fiber.StatusNotFound, types.ApiResponse{
+				Status:  fiber.StatusNotFound,
+				Message: "Booking not found",
+				Data:    nil,
+			})
+		}
+		logger.Error("Failed to find booking", err)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Internal server error",
+			Data:    nil,
+		})
+	}
+
+	// Validate booking is ready for delivery confirmation
+	// Check if booking status allows delivery confirmation (received by postman)
+	if booking.Status != bookingModel.BookingStatusReceivedByPostman {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Booking must be received by postman before delivery confirmation",
+			Data:    nil,
+		})
+	}
+
+	if booking.DeliveryPhone == nil {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "No delivery phone found for this booking",
+			Data:    nil,
+		})
+	}
+
+	// Reset verification status for delivery confirmation
+	booking.DeliveryPhoneConfirmedVerified = false
+
+	if err := dc.DB.Save(&booking).Error; err != nil {
+		logger.Error("Failed to update booking delivery confirmation status", err)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to update booking",
+			Data:    nil,
+		})
+	}
+
+	if err := booking_event.SnapshotBookingToEvent(dc.DB, &booking, "delivery_confirmation_send_otp", strconv.FormatUint(uint64(postmanInfo.ID), 10)); err != nil {
+		logger.Error("Failed to write booking event (delivery_confirmation_send_otp)", err)
+	}
+
+	// Send OTP to the delivery phone for confirmation
+	otpSvc := otpService.NewOTPService(dc.DB)
+	otpRecord, err := otpSvc.SendOTPWithBookingID(*booking.DeliveryPhone, req.Purpose, &booking.ID)
+	if err != nil {
+		logger.Error("Failed to send delivery confirmation OTP", err)
+
+		// Check if it's a blocking error that should be returned as error response
+		errMsg := err.Error()
+		if errMsg == "OTP requests are blocked permanently due to too many failed attempts" ||
+			(len(errMsg) > 20 && errMsg[:20] == "OTP requests are blocked until") {
+			return dc.sendResponseWithLog(c, fiber.StatusTooManyRequests, types.ApiResponse{
+				Status:  fiber.StatusTooManyRequests,
+				Message: err.Error(),
+				Data:    nil,
+			})
+		}
+
+		// For other OTP errors, return error response instead of continuing
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to send delivery confirmation OTP",
+			Data: map[string]interface{}{
+				"booking":   booking,
+				"otp_error": err.Error(),
+			},
+		})
+	} else {
+		logger.Success(fmt.Sprintf("Delivery confirmation OTP sent to phone %s for booking ID: %d (Barcode: %s) by postman: %s", *booking.DeliveryPhone, booking.ID, req.BookingID, postmanInfo.LegalName))
+	}
+
+	responseData := map[string]interface{}{
+		"booking":      booking,
+		"postman_id":   postmanInfo.ID,
+		"postman_name": postmanInfo.LegalName,
+	}
+
+	if otpRecord != nil {
+		responseData["otp_info"] = map[string]interface{}{
+			"otp_id":     otpRecord.ID,
+			"expires_at": otpRecord.ExpiresAt,
+			"phone":      booking.DeliveryPhone,
+			"purpose":    req.Purpose,
+		}
+	}
+
+	return dc.sendResponseWithLog(c, fiber.StatusOK, types.ApiResponse{
+		Status:  fiber.StatusOK,
+		Message: "Delivery confirmation OTP sent successfully",
+		Data:    responseData,
+	})
+}
+
+// DeliveryConfirmationVerifyOtp verifies the OTP for delivery confirmation
+func (dc *DeliveryController) DeliveryConfirmationVerifyOtp(c *fiber.Ctx) error {
+	var req deliveryTypes.VerifyDeliveryPhoneRequest
+	if err := c.BodyParser(&req); err != nil {
+		logger.Error("Failed to parse request body", err)
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Invalid request body",
+			Data:    nil,
+		})
+	}
+
+	// Validate request using the validation method from types
+	if err := req.Validate(); err != nil {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: err.Error(),
+			Data:    nil,
+		})
+	}
+
+	// Get user authentication information (postman user)
+	claims, ok := c.Locals("user").(map[string]interface{})
+	if !ok {
+		return dc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Message: "Invalid user claims",
+			Status:  fiber.StatusUnauthorized,
+			Data:    nil,
+		})
+	}
+
+	userUUID, ok := claims["uuid"].(string)
+	if !ok || userUUID == "" {
+		return dc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Message: "User UUID not found in token",
+			Status:  fiber.StatusUnauthorized,
+			Data:    nil,
+		})
+	}
+
+	// Get postman user info
+	postmanInfo, err := utils.GetUserByUUID(userUUID)
+	if err != nil {
+		logger.Error("Error finding postman by UUID", err)
+		status := fiber.StatusInternalServerError
+		msg := "Database error"
+		if err.Error() == "user not found" {
+			status = fiber.StatusUnauthorized
+			msg = "Postman not found"
+		}
+		return dc.sendResponseWithLog(c, status, types.ApiResponse{
+			Message: msg,
+			Status:  status,
+			Data:    nil,
+		})
+	}
+
+	// Find the booking by barcode
+	var booking bookingModel.Booking
+	if err := dc.DB.Preload("User").Where("barcode = ?", req.BookingID).First(&booking).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return dc.sendResponseWithLog(c, fiber.StatusNotFound, types.ApiResponse{
+				Status:  fiber.StatusNotFound,
+				Message: "Booking not found",
+				Data:    nil,
+			})
+		}
+		logger.Error("Failed to find booking", err)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Internal server error",
+			Data:    nil,
+		})
+	}
+
+	// Check if booking has a delivery phone set
+	if booking.DeliveryPhone == nil {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "No delivery phone found for this booking",
+			Data:    nil,
+		})
+	}
+
+	if booking.DeliveryPhoneConfirmedVerified {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Delivery phone is already confirmed",
+			Data:    nil,
+		})
+	}
+
+	// Verify OTP using OTP service
+	otpSvc := otpService.NewOTPService(dc.DB)
+	isValid, otpRecord, err := otpSvc.VerifyOTPWithDetails(*booking.DeliveryPhone, req.OTPCode, req.Purpose)
+	if err != nil {
+		logger.Error("Failed to verify delivery confirmation OTP", err)
+
+		// If we have an OTP record, we can provide more detailed error information
+		if otpRecord != nil {
+			remainingAttempts := otpRecord.MaxRetries - otpRecord.RetryCount
+			isBlocked := otpRecord.IsCurrentlyBlocked()
+			isExpired := otpRecord.IsExpired()
+
+			// Handle OTP expiration separately
+			if isExpired {
+				return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+					Status:  fiber.StatusBadRequest,
+					Message: "OTP has expired. Please request a new OTP",
+					Data: map[string]interface{}{
+						"error":              "OTP_EXPIRED",
+						"expired_at":         otpRecord.ExpiresAt,
+						"is_expired":         true,
+						"is_blocked":         isBlocked,
+						"remaining_attempts": remainingAttempts,
+						"success":            false,
+					},
+				})
+			}
+
+			// Handle blocked OTP separately
+			if isBlocked {
+				return dc.sendResponseWithLog(c, fiber.StatusTooManyRequests, types.ApiResponse{
+					Status:  fiber.StatusTooManyRequests,
+					Message: err.Error(), // This will contain the detailed blocked message
+					Data: map[string]interface{}{
+						"error":              "OTP_BLOCKED",
+						"is_blocked":         true,
+						"blocked_until":      otpRecord.BlockedUntil,
+						"remaining_attempts": remainingAttempts,
+						"success":            false,
+					},
+				})
+			}
+
+			// Handle other OTP verification errors (like wrong OTP)
+			return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+				Status:  fiber.StatusBadRequest,
+				Message: err.Error(), // This will contain the detailed error message with attempts
+				Data: map[string]interface{}{
+					"error":              "OTP_INVALID",
+					"remaining_attempts": remainingAttempts,
+					"is_blocked":         isBlocked,
+					"is_expired":         isExpired,
+					"success":            false,
+				},
+			})
+		}
+
+		// Fallback for other errors
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: err.Error(), // Show the actual error message instead of generic
+			Data:    nil,
+		})
+	}
+
+	if !isValid {
+		// This case should rarely happen now since we handle specific errors above
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Invalid OTP",
+			Data:    nil,
+		})
+	}
+
+	// Encrypt OTP data for storage
+	var deliveryPhoneConfirmedOTPEncrypted string
+
+	if otpRecord != nil {
+		// Encrypt the confirmed OTP (the OTP code that was verified)
+		encryptedDeliveryPhoneConfirmedOTP, err := utils.EncryptData(otpRecord.OTPCode)
+		if err != nil {
+			logger.Error("Failed to encrypt delivery confirmation OTP", err)
+			// Continue without encryption rather than failing
+			deliveryPhoneConfirmedOTPEncrypted = ""
+		} else {
+			deliveryPhoneConfirmedOTPEncrypted = encryptedDeliveryPhoneConfirmedOTP
+		}
+	}
+	fmt.Println("delivery phone confirmed OTP", deliveryPhoneConfirmedOTPEncrypted)
+	// Mark delivery phone as confirmed and store encrypted OTP
+	booking.DeliveryPhoneConfirmedVerified = true
+	// Always assign the encrypted OTP field, even if it's empty
+	booking.DeliveryPhoneConfirmedOTPEncrypted = &deliveryPhoneConfirmedOTPEncrypted
+	booking.Status = bookingModel.BookingStatusDelivered
+
+	// Save the updated booking with explicit field updates
+	if err := dc.DB.Save(&booking).Error; err != nil {
+		logger.Error("Failed to update delivery phone confirmation status", err)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to update confirmation status",
+			Data:    nil,
+		})
+	}
+
+	// Create booking status event
+	bookingStatusEvent := bookingModel.BookingStatusEvent{
+		BookingID: booking.ID,
+		Status:    booking.Status,
+		CreatedBy: strconv.FormatUint(uint64(postmanInfo.ID), 10),
+	}
+
+	if err := dc.DB.Create(&bookingStatusEvent).Error; err != nil {
+		logger.Error("Failed to create booking status event", err)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to create booking status event",
+			Data:    nil,
+		})
+	}
+
+	if err := booking_event.SnapshotBookingToEvent(dc.DB, &booking, "delivery_phone_confirmed", strconv.FormatUint(uint64(postmanInfo.ID), 10)); err != nil {
+		logger.Error("Failed to write booking event (delivery_phone_confirmed)", err)
+	}
+
+	logger.Success(fmt.Sprintf("Delivery confirmation verified for booking ID: %d (Barcode: %s) by postman: %s", booking.ID, req.BookingID, postmanInfo.LegalName))
+
+	responseData := map[string]interface{}{
+		"booking":      booking,
+		"verified":     true,
+		"postman_id":   postmanInfo.ID,
+		"postman_name": postmanInfo.LegalName,
+	}
+
+	return dc.sendResponseWithLog(c, fiber.StatusOK, types.ApiResponse{
+		Status:  fiber.StatusOK,
+		Message: "Delivery confirmation verified successfully",
+		Data:    responseData,
+	})
+}
