@@ -55,3 +55,21 @@ func (r *VerifyDeliveryPhoneRequest) Validate() error {
 
 	return nil
 }
+
+type VerifyApplicationIDRequest struct {
+	BookingID     string `json:"booking_id" validate:"required"`
+	ApplicationID string `json:"application_id" validate:"required"`
+}
+
+// Validate validates the VerifyApplicationIDRequest fields
+func (r *VerifyApplicationIDRequest) Validate() error {
+	if r.BookingID == "" {
+		return fmt.Errorf("booking_id is required")
+	}
+
+	if r.ApplicationID == "" {
+		return fmt.Errorf("application_id is required")
+	}
+
+	return nil
+}

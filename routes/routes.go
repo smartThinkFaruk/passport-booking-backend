@@ -139,4 +139,8 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	deliveredGroup.Post("/verify-otp", middleware.RequirePermissions(
 		constants.PermPostmanFull,
 	), deliveryController.DeliveryConfirmationVerifyOtp)
+
+	deliveredGroup.Post("/verify-application-id", middleware.RequirePermissions(
+		constants.PermPostmanFull,
+	), deliveryController.VerifyApplicationID)
 }

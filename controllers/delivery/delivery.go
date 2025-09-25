@@ -389,7 +389,7 @@ func (dc *DeliveryController) DeliveryConfirmationVerifyOtp(c *fiber.Ctx) error 
 	booking.DeliveryPhoneConfirmedVerified = true
 	// Always assign the encrypted OTP field, even if it's empty
 	booking.DeliveryPhoneConfirmedOTPEncrypted = &deliveryPhoneConfirmedOTPEncrypted
-	booking.Status = bookingModel.BookingStatusDelivered
+	//booking.Status = bookingModel.BookingStatusDelivered
 
 	// Save the updated booking with explicit field updates
 	if err := dc.DB.Save(&booking).Error; err != nil {
@@ -433,6 +433,143 @@ func (dc *DeliveryController) DeliveryConfirmationVerifyOtp(c *fiber.Ctx) error 
 	return dc.sendResponseWithLog(c, fiber.StatusOK, types.ApiResponse{
 		Status:  fiber.StatusOK,
 		Message: "Delivery confirmation verified successfully",
+		Data:    responseData,
+	})
+}
+
+// VerifyApplicationID verifies the application ID for delivery
+func (dc *DeliveryController) VerifyApplicationID(c *fiber.Ctx) error {
+	var req deliveryTypes.VerifyApplicationIDRequest
+	if err := c.BodyParser(&req); err != nil {
+		logger.Error("Failed to parse request body", err)
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Invalid request body",
+			Data:    nil,
+		})
+	}
+
+	// Validate request using the validation method from types
+	if err := req.Validate(); err != nil {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: err.Error(),
+			Data:    nil,
+		})
+	}
+
+	// Get user authentication information (postman user)
+	claims, ok := c.Locals("user").(map[string]interface{})
+	if !ok {
+		return dc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Message: "Invalid user claims",
+			Status:  fiber.StatusUnauthorized,
+			Data:    nil,
+		})
+	}
+
+	userUUID, ok := claims["uuid"].(string)
+	if !ok || userUUID == "" {
+		return dc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Message: "User UUID not found in token",
+			Status:  fiber.StatusUnauthorized,
+			Data:    nil,
+		})
+	}
+
+	// Get postman user info
+	postmanInfo, err := utils.GetUserByUUID(userUUID)
+	if err != nil {
+		logger.Error("Error finding postman by UUID", err)
+		status := fiber.StatusInternalServerError
+		msg := "Database error"
+		if err.Error() == "user not found" {
+			status = fiber.StatusUnauthorized
+			msg = "Postman not found"
+		}
+		return dc.sendResponseWithLog(c, status, types.ApiResponse{
+			Message: msg,
+			Status:  status,
+			Data:    nil,
+		})
+	}
+
+	// Find the booking by barcode
+	var booking bookingModel.Booking
+	if err := dc.DB.Preload("User").Where("barcode = ?", req.BookingID).First(&booking).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return dc.sendResponseWithLog(c, fiber.StatusNotFound, types.ApiResponse{
+				Status:  fiber.StatusNotFound,
+				Message: "Booking not found",
+				Data:    nil,
+			})
+		}
+		logger.Error("Failed to find booking", err)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Internal server error",
+			Data:    nil,
+		})
+	}
+
+	// Validate booking status allows application ID verification
+	if booking.Status != bookingModel.BookingStatusReceivedByPostman {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Booking must be received by postman before application ID verification",
+			Data:    nil,
+		})
+	}
+
+	// Check if application ID is already verified
+	if booking.DeliveryApplicationIDVerified {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Application ID is already verified for this booking",
+			Data:    nil,
+		})
+	}
+
+	// Verify the application ID matches the booking's AppOrOrderID
+	if booking.AppOrOrderID != req.ApplicationID {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Application ID does not match the booking record",
+			Data:    nil,
+		})
+	}
+
+	// Mark application ID as verified
+	booking.DeliveryApplicationIDVerified = true
+
+	// Save the updated booking
+	if err := dc.DB.Save(&booking).Error; err != nil {
+		logger.Error("Failed to update application ID verification status", err)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to update verification status",
+			Data:    nil,
+		})
+	}
+
+	// Create booking event for application ID verification
+	if err := booking_event.SnapshotBookingToEvent(dc.DB, &booking, "application_id_verified", strconv.FormatUint(uint64(postmanInfo.ID), 10)); err != nil {
+		logger.Error("Failed to write booking event (application_id_verified)", err)
+	}
+
+	logger.Success(fmt.Sprintf("Application ID verified for booking ID: %d (Barcode: %s) by postman: %s", booking.ID, req.BookingID, postmanInfo.LegalName))
+
+	responseData := map[string]interface{}{
+		"booking":        booking,
+		"verified":       true,
+		"application_id": req.ApplicationID,
+		"postman_id":     postmanInfo.ID,
+		"postman_name":   postmanInfo.LegalName,
+	}
+
+	return dc.sendResponseWithLog(c, fiber.StatusOK, types.ApiResponse{
+		Status:  fiber.StatusOK,
+		Message: "Application ID verified successfully",
 		Data:    responseData,
 	})
 }

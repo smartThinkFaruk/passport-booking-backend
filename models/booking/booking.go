@@ -26,6 +26,7 @@ type Booking struct {
 	DeliveryPhoneAppliedVerified       bool    `gorm:"default:false" json:"delivery_phone_applied_verified"`
 	DeliveryPhoneAppliedOTPEncrypted   *string `gorm:"column:delivery_phone_apply_otp_encrypted;type:text" json:"delivery_phone_apply_otp_encrypted,omitempty"`
 	DeliveryPhoneConfirmedVerified     bool    `gorm:"default:false" json:"delivery_phone_confirmed_verified"`
+	DeliveryApplicationIDVerified      bool    `gorm:"default:false" json:"delivery_application_id_verified"`
 	DeliveryPhoneConfirmedOTPEncrypted *string `gorm:"column:delivery_phone_confirm_otp_encrypted;type:text" json:"delivery_phone_confirm_otp_encrypted,omitempty"`
 
 	Address               string  `gorm:"type:text;not null" json:"address"`
