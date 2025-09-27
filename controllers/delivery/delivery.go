@@ -2,6 +2,11 @@ package delivery
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
 	"github.com/gofiber/fiber/v2"
 	"gorm.io/gorm"
 	"passport-booking/logger"
@@ -571,5 +576,206 @@ func (dc *DeliveryController) VerifyApplicationID(c *fiber.Ctx) error {
 		Status:  fiber.StatusOK,
 		Message: "Application ID verified successfully",
 		Data:    responseData,
+	})
+}
+
+// UploadDeliveryPhoto handles photo upload for a booking during delivery
+func (dc *DeliveryController) UploadDeliveryPhoto(c *fiber.Ctx) error {
+	// Get booking ID from form data
+	bookingIDStr := c.FormValue("booking_id")
+	if bookingIDStr == "" {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Booking ID is required",
+			Data:    nil,
+		})
+	}
+
+	// Get user authentication information (postman user)
+	claims, ok := c.Locals("user").(map[string]interface{})
+	if !ok {
+		return dc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Message: "Invalid user claims",
+			Status:  fiber.StatusUnauthorized,
+			Data:    nil,
+		})
+	}
+
+	userUUID, ok := claims["uuid"].(string)
+	if !ok || userUUID == "" {
+		return dc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Message: "User UUID not found in token",
+			Status:  fiber.StatusUnauthorized,
+			Data:    nil,
+		})
+	}
+
+	// Get postman user info
+	postmanInfo, err := utils.GetUserByUUID(userUUID)
+	if err != nil {
+		logger.Error("Error finding postman by UUID", err)
+		status := fiber.StatusInternalServerError
+		msg := "Database error"
+		if err.Error() == "user not found" {
+			status = fiber.StatusUnauthorized
+			msg = "Postman not found"
+		}
+		return dc.sendResponseWithLog(c, status, types.ApiResponse{
+			Message: msg,
+			Status:  status,
+			Data:    nil,
+		})
+	}
+
+	// Find the booking by barcode
+	var booking bookingModel.Booking
+	if err := dc.DB.Preload("User").Where("barcode = ?", bookingIDStr).First(&booking).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return dc.sendResponseWithLog(c, fiber.StatusNotFound, types.ApiResponse{
+				Status:  fiber.StatusNotFound,
+				Message: "Booking not found",
+				Data:    nil,
+			})
+		}
+		logger.Error("Failed to find booking", err)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Internal server error",
+			Data:    nil,
+		})
+	}
+
+	// Check if photo is already uploaded
+	if booking.UploadPhoto != nil && *booking.UploadPhoto != "" {
+		// Check if the file actually exists on the filesystem
+		if _, err := os.Stat(*booking.UploadPhoto); err == nil {
+			return dc.sendResponseWithLog(c, fiber.StatusConflict, types.ApiResponse{
+				Status:  fiber.StatusConflict,
+				Message: "Photo already uploaded for this booking",
+				Data: fiber.Map{
+					"booking_id":     booking.ID,
+					"existing_photo": *booking.UploadPhoto,
+					"uploaded_at":    booking.UpdatedAt,
+				},
+			})
+		} else {
+			logger.Warning(fmt.Sprintf("Photo path exists in database but file not found on filesystem for booking %d: %s", booking.ID, *booking.UploadPhoto))
+		}
+	}
+
+	// Get the uploaded file
+	file, err := c.FormFile("photo")
+	if err != nil {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Photo file is required",
+			Data:    nil,
+		})
+	}
+
+	// Validate file type (only allow common image formats)
+	allowedTypes := map[string]bool{
+		"image/jpeg": true,
+		"image/jpg":  true,
+		"image/png":  true,
+		"image/gif":  true,
+		"image/webp": true,
+	}
+
+	fileType := file.Header.Get("Content-Type")
+	if !allowedTypes[fileType] {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed",
+			Data:    nil,
+		})
+	}
+
+	// Validate file size (max 10MB)
+	maxSize := int64(10 << 20) // 10MB
+	if file.Size > maxSize {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "File size too large. Maximum size is 10MB",
+			Data:    nil,
+		})
+	}
+
+	// Create upload directory if it doesn't exist
+	uploadDir := "./upload_photos"
+	if err := os.MkdirAll(uploadDir, os.ModePerm); err != nil {
+		logger.Error("Failed to create upload directory", err)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to create upload directory",
+			Data:    nil,
+		})
+	}
+
+	// Generate unique filename
+	fileExt := strings.ToLower(filepath.Ext(file.Filename))
+	if fileExt == "" {
+		// If no extension, try to determine from content type
+		switch fileType {
+		case "image/jpeg":
+			fileExt = ".jpg"
+		case "image/png":
+			fileExt = ".png"
+		case "image/gif":
+			fileExt = ".gif"
+		case "image/webp":
+			fileExt = ".webp"
+		default:
+			fileExt = ".jpg"
+		}
+	}
+
+	timestamp := time.Now().Format("20060102_150405")
+	filename := fmt.Sprintf("booking_%s%s", timestamp, fileExt)
+	filePath := fmt.Sprintf("%s/%s", uploadDir, filename)
+
+	// Save the file
+	if err := c.SaveFile(file, filePath); err != nil {
+		logger.Error("Failed to save uploaded file", err)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to save uploaded file",
+			Data:    nil,
+		})
+	}
+
+	// Update booking with photo path
+	if err := dc.DB.Model(&booking).Updates(bookingModel.Booking{
+		UploadPhoto: &filePath,
+		UpdatedBy:   fmt.Sprintf("%s (%s)", postmanInfo.LegalName, postmanInfo.Phone),
+		UpdatedAt:   time.Now(),
+	}).Error; err != nil {
+		logger.Error("Failed to update booking with photo path", err)
+		// Try to delete the uploaded file if database update fails
+		os.Remove(filePath)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to update booking with photo information",
+			Data:    nil,
+		})
+	}
+
+	// Create booking event for photo upload
+	if err := booking_event.SnapshotBookingToEvent(dc.DB, &booking, "delivery_photo_uploaded", strconv.FormatUint(uint64(postmanInfo.ID), 10)); err != nil {
+		logger.Error("Failed to write booking event (delivery_photo_uploaded)", err)
+	}
+
+	logger.Success(fmt.Sprintf("Delivery photo uploaded for booking ID: %d (Barcode: %s) by postman: %s", booking.ID, bookingIDStr, postmanInfo.LegalName))
+
+	return dc.sendResponseWithLog(c, fiber.StatusOK, types.ApiResponse{
+		Status:  fiber.StatusOK,
+		Message: "Photo uploaded successfully",
+		Data: fiber.Map{
+			"booking_id":   booking.ID,
+			"photo_path":   filePath,
+			"filename":     filename,
+			"postman_id":   postmanInfo.ID,
+			"postman_name": postmanInfo.LegalName,
+		},
 	})
 }

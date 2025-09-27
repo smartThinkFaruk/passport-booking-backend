@@ -34,3 +34,4 @@ go.work.sum
 .DS_Store
 Thumbs.db
 uploaded_slips/
+upload_photos/

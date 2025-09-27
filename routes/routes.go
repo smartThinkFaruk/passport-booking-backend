@@ -143,4 +143,8 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	deliveredGroup.Post("/verify-application-id", middleware.RequirePermissions(
 		constants.PermPostmanFull,
 	), deliveryController.VerifyApplicationID)
+
+	deliveredGroup.Post("/upload-photo", middleware.RequirePermissions(
+		constants.PermPostmanFull,
+	), deliveryController.UploadDeliveryPhoto)
 }

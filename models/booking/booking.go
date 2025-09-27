@@ -44,7 +44,8 @@ type Booking struct {
 	CreatedAt   time.Time     `gorm:"autoCreateTime;index" json:"created_at"`
 	UpdatedBy   string        `gorm:"type:varchar(255)" json:"updated_by,omitempty"`
 	UpdatedAt   time.Time     `gorm:"autoUpdateTime" json:"updated_at"`
-	DeletedAt   *time.Time    `gorm:"index" json:"deleted_at,omitempty"` // Soft delete field
+	DeletedAt   *time.Time    `gorm:"index" json:"deleted_at,omitempty"`               // Soft delete field
+	UploadPhoto *string       `gorm:"type:varchar(500)" json:"upload_photo,omitempty"` // Photo path storage
 }
 
 // BookingStatus represents the status of a booking
