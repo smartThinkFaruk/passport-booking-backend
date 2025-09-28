@@ -7,6 +7,7 @@ import (
 	"passport-booking/controllers/bag"
 	"passport-booking/controllers/booking"
 	"passport-booking/controllers/delivery"
+	"passport-booking/controllers/passport_percel"
 	"passport-booking/controllers/user"
 	httpServices "passport-booking/httpServices/sso"
 	"passport-booking/logger"
@@ -24,6 +25,7 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	bookingController := booking.NewBookingController(db, asyncLogger)
 	bagController := bag.NewBagController(db, asyncLogger)
 	deliveryController := delivery.NewDeliveryController(db, asyncLogger)
+	regionalPassportOfficeController := passport_percel.NewRegionalPassportOfficeController(db, asyncLogger)
 
 	// Start the async logger processing goroutine
 	go asyncLogger.ProcessLog()
@@ -67,6 +69,11 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	auth.Post("/register", authController.Register)
 	auth.Get("/profile", user.GetUserInfo)
 	auth.Post("/logout", authController.LogOut)
+	//
+	//authGroup := api.Group("/auth").Use(middleware.RequireAnyPermission())
+	//authGroup.Post("/register", authController.Register)
+	//authGroup.Get("/profile", user.GetUserInfo)
+	//authGroup.Post("/logout", authController.LogOut)
 
 	/*=============================================================================
 	| Booking Routes
@@ -147,4 +154,15 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	deliveredGroup.Post("/upload-photo", middleware.RequirePermissions(
 		constants.PermPostmanFull,
 	), deliveryController.UploadDeliveryPhoto)
+
+	/*=============================================================================
+	| Regional Passport Office Routes
+	===============================================================================*/
+	regionalOfficeGroup := api.Group("/regional-passport-office")
+
+	// Get list of all regional passport offices (public route)
+	regionalOfficeGroup.Get("/list", middleware.RequirePermissions(
+		constants.PermParcelOperatorFull,
+	), regionalPassportOfficeController.GetRegionalPassportOffices)
+
 }
