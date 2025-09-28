@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"passport-booking/database"
+	"passport-booking/database/seeders"
 	"passport-booking/logger"
 	"passport-booking/routes"
 	"time"
@@ -36,6 +37,11 @@ func main() {
 		logger.Error("Failed to connect to the database", err)
 		return
 	}
+
+	// Run seeders only if data doesn't exist
+	logger.Success("Checking if database seeding is needed...")
+	seeders.SeedRegionalPassportOffices(db)
+
 	// Initialize the async logger with the database connection
 	// go logger.AsyncLogger(db)
 

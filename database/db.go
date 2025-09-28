@@ -9,6 +9,7 @@ import (
 	"passport-booking/models/booking"
 	"passport-booking/models/log"
 	"passport-booking/models/otp"
+	"passport-booking/models/regional_passport_office"
 	"passport-booking/models/slip_parser"
 	"passport-booking/models/user"
 
@@ -118,6 +119,8 @@ func autoMigrate() error {
 		&log.Log{},
 		// Slip Parser
 		&slip_parser.SlipParserRequest{},
+		// Regional Passport Office
+		&regional_passport_office.RegionalPassportOffice{},
 	}
 
 	for _, model := range remainingModels {
@@ -227,6 +230,19 @@ func createIndexes() error {
 		}
 		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_slip_parser_requests_file_hash ON slip_parser_requests(file_hash)").Error; err != nil {
 			return fmt.Errorf("failed to create slip parser file_hash index: %w", err)
+		}
+	}
+
+	// Regional Passport Office indexes
+	if tableExists("regional_passport_offices") {
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_regional_passport_offices_code ON regional_passport_offices(code)").Error; err != nil {
+			return fmt.Errorf("failed to create regional passport office code index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_regional_passport_offices_name ON regional_passport_offices(name)").Error; err != nil {
+			return fmt.Errorf("failed to create regional passport office name index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_regional_passport_offices_mobile ON regional_passport_offices(mobile)").Error; err != nil {
+			return fmt.Errorf("failed to create regional passport office mobile index: %w", err)
 		}
 	}
 
