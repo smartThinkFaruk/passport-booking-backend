@@ -45,17 +45,32 @@ func main() {
 	// Initialize the async logger with the database connection
 	// go logger.AsyncLogger(db)
 
+	var allowlist = map[string]struct{}{
+		"http://192.168.1.18:3003": {},
+		"http://192.168.1.18:3002": {},
+		"http://192.168.1.71:3000": {},
+		"http://192.168.1.76:3000": {},
+		"http://192.168.1.76:3003": {},
+		"http://192.168.1.71:3001": {},
+		"http://192.168.1.66:3001": {},
+	}
 	app.Use(cors.New(cors.Config{
-		AllowOrigins:     os.Getenv("FRONTEND_URL"),
-		AllowMethods:     "GET,POST,PUT,DELETE,OPTIONS",
+		AllowOriginsFunc: func(origin string) bool {
+			_, ok := allowlist[origin]
+			return ok
+		},
+		AllowMethods:     "GET,POST,PUT,PATCH,DELETE,OPTIONS",
 		AllowHeaders:     "Origin, Content-Type, Accept, Authorization",
+		ExposeHeaders:    "Content-Length, Authorization",
 		AllowCredentials: true,
 	}))
 
 	// Use new consolidated routes
 	routes.SetupRoutes(app, db)
 
+	// app_host := "0.0.0.0"
 	app_host := os.Getenv("APP_HOST")
+	// app_port := "8004"
 	app_port := os.Getenv("APP_PORT")
 	app.Listen(app_host + ":" + app_port)
 	// Additional application code can follow...

@@ -3,12 +3,14 @@ package database
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"passport-booking/logger"
 	"passport-booking/models/address"
 	"passport-booking/models/booking"
 	"passport-booking/models/log"
 	"passport-booking/models/otp"
+	"passport-booking/models/parcel_booking"
 	"passport-booking/models/regional_passport_office"
 	"passport-booking/models/slip_parser"
 	"passport-booking/models/user"
@@ -53,7 +55,6 @@ func InitDB() (*gorm.DB, error) {
 		return nil, err
 	}
 	logger.Success("Successfully connected to the database")
-
 	// Run auto migration for all models
 	if err := autoMigrate(); err != nil {
 		logger.Error("Failed to run auto migration", err)
@@ -121,6 +122,9 @@ func autoMigrate() error {
 		&slip_parser.SlipParserRequest{},
 		// Regional Passport Office
 		&regional_passport_office.RegionalPassportOffice{},
+		// Parcel Booking
+		&parcel_booking.ParcelBooking{},
+		&parcel_booking.ParcelBookingStatusEvent{},
 	}
 
 	for _, model := range remainingModels {
@@ -132,21 +136,21 @@ func autoMigrate() error {
 	return nil
 }
 
+// tableExists checks if a table exists in the database
+func tableExists(tableName string) bool {
+	var exists bool
+	err := DB.Raw(`
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.tables 
+			WHERE table_schema = CURRENT_SCHEMA() 
+			AND table_name = ?
+			AND table_type = 'BASE TABLE'
+		)`, tableName).Scan(&exists).Error
+	return err == nil && exists
+}
+
 // createIndexes creates additional indexes for better performance
 func createIndexes() error {
-	// Helper function to check if table exists before creating index
-	tableExists := func(tableName string) bool {
-		var exists bool
-		err := DB.Raw(`
-			SELECT EXISTS (
-				SELECT 1 FROM information_schema.tables 
-				WHERE table_schema = CURRENT_SCHEMA() 
-				AND table_name = ?
-				AND table_type = 'BASE TABLE'
-			)`, tableName).Scan(&exists).Error
-		return err == nil && exists
-	}
-
 	// User indexes
 	if tableExists("users") {
 		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_users_uuid ON users(uuid)").Error; err != nil {
@@ -246,6 +250,98 @@ func createIndexes() error {
 		}
 	}
 
+	// Parcel Booking indexes (only if table exists)
+	if tableExists("parcel_bookings") {
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_parcel_bookings_user_id ON parcel_bookings(user_id)").Error; err != nil {
+			return fmt.Errorf("failed to create parcel booking user_id index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_parcel_bookings_barcode ON parcel_bookings(barcode)").Error; err != nil {
+			return fmt.Errorf("failed to create parcel booking barcode index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_parcel_bookings_item_id ON parcel_bookings(item_id)").Error; err != nil {
+			return fmt.Errorf("failed to create parcel booking item_id index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_parcel_bookings_phone ON parcel_bookings(phone)").Error; err != nil {
+			return fmt.Errorf("failed to create parcel booking phone index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_parcel_bookings_post_code ON parcel_bookings(post_code)").Error; err != nil {
+			return fmt.Errorf("failed to create parcel booking post_code index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_parcel_bookings_current_status ON parcel_bookings(current_status)").Error; err != nil {
+			return fmt.Errorf("failed to create parcel booking current_status index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_parcel_bookings_service_type ON parcel_bookings(service_type)").Error; err != nil {
+			return fmt.Errorf("failed to create parcel booking service_type index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_parcel_bookings_created_at ON parcel_bookings(created_at)").Error; err != nil {
+			return fmt.Errorf("failed to create parcel booking created_at index: %w", err)
+		}
+	}
+
+	// Parcel Booking Status Event indexes
+	if tableExists("parcel_booking_status_events") {
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_parcel_booking_status_events_parcel_booking_id ON parcel_booking_status_events(parcel_booking_id)").Error; err != nil {
+			return fmt.Errorf("failed to create parcel booking status event parcel_booking_id index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_parcel_booking_status_events_status ON parcel_booking_status_events(status)").Error; err != nil {
+			return fmt.Errorf("failed to create parcel booking status event status index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_parcel_booking_status_events_created_by ON parcel_booking_status_events(created_by)").Error; err != nil {
+			return fmt.Errorf("failed to create parcel booking status event created_by index: %w", err)
+		}
+		if err := DB.Exec("CREATE INDEX IF NOT EXISTS idx_parcel_booking_status_events_created_at ON parcel_booking_status_events(created_at)").Error; err != nil {
+			return fmt.Errorf("failed to create parcel booking status event created_at index: %w", err)
+		}
+	}
+
+	// Fix parcel booking foreign key constraint
+	if err := fixParcelBookingForeignKeyConstraints(); err != nil {
+		logger.Warning("Failed to fix parcel booking foreign key constraints: " + err.Error())
+	}
+
+	return nil
+}
+
+// fixParcelBookingForeignKeyConstraints fixes the foreign key constraint issue
+func fixParcelBookingForeignKeyConstraints() error {
+	if !tableExists("parcel_booking_status_events") || !tableExists("parcel_bookings") {
+		return nil // Tables don't exist, no need to fix constraints
+	}
+
+	// Check if the problematic constraint exists
+	var constraintExists bool
+	checkSQL := `
+		SELECT EXISTS (
+			SELECT 1 FROM information_schema.table_constraints 
+			WHERE constraint_name = 'fk_parcel_booking_status_events_parcel_booking'
+			AND table_name = 'parcel_booking_status_events'
+		)`
+
+	if err := DB.Raw(checkSQL).Scan(&constraintExists).Error; err != nil {
+		return fmt.Errorf("failed to check constraint existence: %w", err)
+	}
+
+	if constraintExists {
+		// Drop the existing restrictive constraint
+		dropSQL := "ALTER TABLE parcel_booking_status_events DROP CONSTRAINT IF EXISTS fk_parcel_booking_status_events_parcel_booking"
+		if err := DB.Exec(dropSQL).Error; err != nil {
+			return fmt.Errorf("failed to drop existing constraint: %w", err)
+		}
+	}
+
+	// Create new constraint without CASCADE/RESTRICT behavior
+	createSQL := `
+		ALTER TABLE parcel_booking_status_events 
+		ADD CONSTRAINT fk_parcel_booking_status_events_parcel_booking 
+		FOREIGN KEY (parcel_booking_id) REFERENCES parcel_bookings(id)`
+
+	if err := DB.Exec(createSQL).Error; err != nil {
+		// If constraint already exists with this name, ignore the error
+		if !strings.Contains(err.Error(), "already exists") {
+			return fmt.Errorf("failed to create new constraint: %w", err)
+		}
+	}
+
 	return nil
 }
 
@@ -258,8 +354,8 @@ func createForeignKeyConstraints() error {
 	}{
 		{
 			name: "fk_bookings_address",
-			sql: `ALTER TABLE bookings ADD CONSTRAINT fk_bookings_address 
-				  FOREIGN KEY (delivery_address_id) REFERENCES addresses(id) 
+			sql: `ALTER TABLE bookings ADD CONSTRAINT fk_bookings_address
+				  FOREIGN KEY (delivery_address_id) REFERENCES addresses(id)
 				  ON UPDATE CASCADE ON DELETE RESTRICT`,
 		},
 	}
@@ -269,7 +365,7 @@ func createForeignKeyConstraints() error {
 		var exists bool
 		checkSQL := `
 			SELECT EXISTS (
-				SELECT 1 FROM information_schema.table_constraints 
+				SELECT 1 FROM information_schema.table_constraints
 				WHERE constraint_name = $1
 			)
 		`
@@ -292,14 +388,4 @@ func createForeignKeyConstraints() error {
 	}
 
 	return nil
-}
-
-// GetDB returns the database instance
-func GetDB() *gorm.DB {
-	return DB
-}
-
-// Legacy function for backward compatibility
-func ConnectDB() (*gorm.DB, error) {
-	return InitDB()
 }

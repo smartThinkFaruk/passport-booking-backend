@@ -26,6 +26,7 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	bagController := bag.NewBagController(db, asyncLogger)
 	deliveryController := delivery.NewDeliveryController(db, asyncLogger)
 	regionalPassportOfficeController := passport_percel.NewRegionalPassportOfficeController(db, asyncLogger)
+	parcelBookingController := passport_percel.NewParcelBookingController(db, asyncLogger)
 
 	// Start the async logger processing goroutine
 	go asyncLogger.ProcessLog()
@@ -65,15 +66,15 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	/*=============================================================================
 	| Protected Routes
 	===============================================================================*/
-	auth := api.Group("/auth").Use(middleware.RequireAnyPermission())
-	auth.Post("/register", authController.Register)
-	auth.Get("/profile", user.GetUserInfo)
-	auth.Post("/logout", authController.LogOut)
+	//auth := api.Group("/auth").Use(middleware.RequireAnyPermission())
+	//auth.Post("/register", authController.Register)
+	//auth.Get("/profile", user.GetUserInfo)
+	//auth.Post("/logout", authController.LogOut)
 	//
-	//authGroup := api.Group("/auth").Use(middleware.RequireAnyPermission())
-	//authGroup.Post("/register", authController.Register)
-	//authGroup.Get("/profile", user.GetUserInfo)
-	//authGroup.Post("/logout", authController.LogOut)
+	authGroup := api.Group("/auth").Use(middleware.RequireAnyPermission())
+	authGroup.Post("/register", authController.Register)
+	authGroup.Get("/profile", user.GetUserInfo)
+	authGroup.Post("/logout", authController.LogOut)
 
 	/*=============================================================================
 	| Booking Routes
@@ -164,5 +165,19 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	regionalOfficeGroup.Get("/list", middleware.RequirePermissions(
 		constants.PermParcelOperatorFull,
 	), regionalPassportOfficeController.GetRegionalPassportOffices)
+
+	/*=============================================================================
+	| Parcel Booking Routes
+	===============================================================================*/
+	parcelBookingGroup := api.Group("/parcelbooking")
+
+	parcelBookingGroup.Post("/store", middleware.RequirePermissions(
+		constants.PermParcelOperatorFull,
+	), parcelBookingController.Store)
+
+	// Parcel booking pending status route
+	parcelBookingGroup.Post("/pending", middleware.RequirePermissions(
+		constants.PermParcelOperatorFull,
+	), parcelBookingController.StorePendingBooking)
 
 }
