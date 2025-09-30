@@ -747,7 +747,6 @@ func (dc *DeliveryController) UploadDeliveryPhoto(c *fiber.Ctx) error {
 	// Update booking with photo path
 	if err := dc.DB.Model(&booking).Updates(bookingModel.Booking{
 		UploadPhoto: &filePath,
-		UpdatedBy:   fmt.Sprintf("%s (%s)", postmanInfo.LegalName, postmanInfo.Phone),
 		UpdatedAt:   time.Now(),
 	}).Error; err != nil {
 		logger.Error("Failed to update booking with photo path", err)
@@ -777,5 +776,75 @@ func (dc *DeliveryController) UploadDeliveryPhoto(c *fiber.Ctx) error {
 			"postman_id":   postmanInfo.ID,
 			"postman_name": postmanInfo.LegalName,
 		},
+	})
+}
+
+// ItemDetails handles POST /delivered/itemdetails
+func (dc *DeliveryController) ItemDetails(c *fiber.Ctx) error {
+	type request struct {
+		Barcode string `json:"barcode"`
+	}
+	var req request
+	if err := c.BodyParser(&req); err != nil {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Invalid request body",
+			Data:    nil,
+		})
+	}
+	if req.Barcode == "" {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Barcode is required",
+			Data:    nil,
+		})
+	}
+	claims, ok := c.Locals("user").(map[string]interface{})
+	if !ok {
+		return dc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Status:  fiber.StatusUnauthorized,
+			Message: "Invalid user claims",
+			Data:    nil,
+		})
+	}
+	userUUID, ok := claims["uuid"].(string)
+	if !ok || userUUID == "" {
+		return dc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Status:  fiber.StatusUnauthorized,
+			Message: "User UUID not found in token",
+			Data:    nil,
+		})
+	}
+	// Optionally, get user info if needed (e.g., for ID)
+	postmanInfo, err := utils.GetUserByUUID(userUUID)
+	if err != nil {
+		return dc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Status:  fiber.StatusUnauthorized,
+			Message: "Postman not found",
+			Data:    nil,
+		})
+	}
+	var booking bookingModel.Booking
+	// Convert postmanInfo.ID to string for updated_by comparison
+	updatedByStr := fmt.Sprintf("%v", postmanInfo.ID)
+	err = dc.DB.Where("barcode = ? AND status = ? AND updated_by = ?", req.Barcode, bookingModel.BookingStatusReceivedByPostman, updatedByStr).First(&booking).Error
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return dc.sendResponseWithLog(c, fiber.StatusNotFound, types.ApiResponse{
+				Status:  fiber.StatusNotFound,
+				Message: "Booking not found",
+				Data:    nil,
+			})
+		}
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Internal server error",
+			Data:    nil,
+		})
+	}
+	return dc.sendResponseWithLog(c, fiber.StatusOK, types.ApiResponse{
+		Status:  fiber.StatusOK,
+		Message: "Booking details found",
+		Data:    booking,
 	})
 }

@@ -156,6 +156,10 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 		constants.PermPostmanFull,
 	), deliveryController.UploadDeliveryPhoto)
 
+	deliveredGroup.Post("/itemdetails", middleware.RequirePermissions(
+		constants.PermPostmanFull,
+	), deliveryController.ItemDetails)
+
 	/*=============================================================================
 	| Regional Passport Office Routes
 	===============================================================================*/
