@@ -24,6 +24,7 @@ type ParcelBooking struct {
 	Insured       bool    `gorm:"default:false"            json:"insured"`
 	CurrentStatus string  `gorm:"size:50;not null;column:current_status" json:"current_status"`
 	PushStatus    int     `gorm:"default:0"                json:"push_status"`
+	UpdatedBy     string  `gorm:"type:varchar(255)" json:"updated_by,omitempty"`
 
 	CreatedAt     time.Time  `gorm:"autoCreateTime"           json:"created_at"`
 	PendingDate   *time.Time `json:"pending_date"`

@@ -120,11 +120,24 @@ func (pbc *ParcelBookingController) Store(c *fiber.Ctx) error {
 	if authHeader != "" {
 		generatedBarcode, err := pbc.getBarcodeFromAPI(authHeader)
 		if err != nil {
-			// Log the error but don't fail the entire operation
+			// Log the error and return the actual error message - don't create parcel without barcode
 			logger.Error("Failed to generate barcode", err)
-		} else {
-			barcode = generatedBarcode
+			response := types.ApiResponse{
+				Status:  fiber.StatusInternalServerError,
+				Message: fmt.Sprintf("Failed to generate barcode: %v", err),
+				Data:    nil,
+			}
+			return pbc.sendResponseWithLog(c, fiber.StatusInternalServerError, response)
 		}
+		barcode = generatedBarcode
+	} else {
+		// No authorization header provided
+		response := types.ApiResponse{
+			Status:  fiber.StatusUnauthorized,
+			Message: "Authorization header required for barcode generation",
+			Data:    nil,
+		}
+		return pbc.sendResponseWithLog(c, fiber.StatusUnauthorized, response)
 	}
 
 	// If no existing parcel found, create a new one with barcode
@@ -138,6 +151,7 @@ func (pbc *ParcelBookingController) Store(c *fiber.Ctx) error {
 		CurrentStatus: string(parcel_booking.ParcelBookingStatusInitial),
 		ServiceType:   "passport", // Default service type
 		Insured:       false,
+		UpdatedBy:     fmt.Sprintf("%d", userID), // Convert uint to string
 		PushStatus:    0,
 	}
 
@@ -305,6 +319,7 @@ func (pbc *ParcelBookingController) StorePendingBooking(c *fiber.Ctx) error {
 		now := time.Now()
 		parcelBooking.CurrentStatus = string(parcel_booking.ParcelBookingStatusPending)
 		parcelBooking.PendingDate = &now
+		parcelBooking.UpdatedBy = fmt.Sprintf("%d", userID)
 
 		if err := pbc.DB.Save(&parcelBooking).Error; err != nil {
 			response := types.ApiResponse{
@@ -340,4 +355,279 @@ func (pbc *ParcelBookingController) StorePendingBooking(c *fiber.Ctx) error {
 	}
 
 	return pbc.sendResponseWithLog(c, statusCode, response)
+}
+
+// StoreSubmit handles submitting a parcel booking to external DMS API
+func (pbc *ParcelBookingController) StoreSubmit(c *fiber.Ctx) error {
+	var request parcel_booking_types.StoreSubmitRequest
+
+	// Parse request body
+	if err := c.BodyParser(&request); err != nil {
+		response := types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Invalid request format",
+			Data:    nil,
+		}
+		return pbc.sendResponseWithLog(c, fiber.StatusBadRequest, response)
+	}
+
+	// Get user authentication information
+	claims, ok := c.Locals("user").(map[string]interface{})
+	if !ok {
+		response := types.ApiResponse{
+			Status:  fiber.StatusUnauthorized,
+			Message: "Invalid user claims",
+			Data:    nil,
+		}
+		return pbc.sendResponseWithLog(c, fiber.StatusUnauthorized, response)
+	}
+
+	userUUID, ok := claims["uuid"].(string)
+	if !ok || userUUID == "" {
+		response := types.ApiResponse{
+			Status:  fiber.StatusUnauthorized,
+			Message: "User UUID not found in token",
+			Data:    nil,
+		}
+		return pbc.sendResponseWithLog(c, fiber.StatusUnauthorized, response)
+	}
+
+	userInfo, err := utils.GetUserByUUID(userUUID)
+	if err != nil {
+		status := fiber.StatusInternalServerError
+		msg := "Database error"
+		if err.Error() == "user not found" {
+			status = fiber.StatusUnauthorized
+			msg = "User not found"
+		}
+		response := types.ApiResponse{
+			Status:  status,
+			Message: msg,
+			Data:    nil,
+		}
+		return pbc.sendResponseWithLog(c, status, response)
+	}
+
+	userID := uint(userInfo.ID)
+
+	// Find the parcel booking by barcode
+	var parcelBooking parcel_booking.ParcelBooking
+	result := pbc.DB.Where("barcode = ?", request.Barcode).First(&parcelBooking)
+	if result.Error != nil {
+		response := types.ApiResponse{
+			Status:  fiber.StatusNotFound,
+			Message: "Parcel booking not found",
+			Data:    nil,
+		}
+		return pbc.sendResponseWithLog(c, fiber.StatusNotFound, response)
+	}
+
+	// Check if the parcel booking is in pending status
+	if parcelBooking.CurrentStatus != string(parcel_booking.ParcelBookingStatusPending) {
+		response := types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Parcel booking must be in pending status to submit",
+			Data:    nil,
+		}
+		return pbc.sendResponseWithLog(c, fiber.StatusBadRequest, response)
+	}
+
+	// Check if the parcel booking is already booked
+	if parcelBooking.CurrentStatus == string(parcel_booking.ParcelBookingStatusBooked) {
+		response := types.ApiResponse{
+			Status:  fiber.StatusOK,
+			Message: "Parcel booking is already submitted",
+			Data:    parcelBooking,
+		}
+		return pbc.sendResponseWithLog(c, fiber.StatusOK, response)
+	}
+
+	// Call external DMS API for booking
+	authHeader := c.Get("Authorization")
+	if authHeader == "" {
+		response := types.ApiResponse{
+			Status:  fiber.StatusUnauthorized,
+			Message: "Authorization header required",
+			Data:    nil,
+		}
+		return pbc.sendResponseWithLog(c, fiber.StatusUnauthorized, response)
+	}
+
+	dmsBody, dmsStatusCode, err := pbc.BookingDms(authHeader, request.Barcode, parcelBooking.ID)
+	if err != nil {
+		// Log the error with more details
+		//logger.Error(fmt.Sprintf("DMS booking failed for barcode %s: %v", request.Barcode, err))
+		logger.Error("DMS booking failed", err)
+		response := types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: fmt.Sprintf("Failed to call external booking API: %v", err),
+			Data:    nil,
+		}
+		return pbc.sendResponseWithLog(c, fiber.StatusInternalServerError, response)
+	}
+
+	// Handle DMS API response
+	if dmsStatusCode != http.StatusOK && dmsStatusCode != http.StatusCreated {
+		// Log the DMS response for debugging
+		//logger.Error(fmt.Sprintf("DMS API returned status %d for barcode %s. Response: %s", dmsStatusCode, request.Barcode, string(dmsBody)))
+		logger.Error("Failed to Booking", err)
+		response := types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: fmt.Sprintf("DMS API returned status %d", dmsStatusCode),
+			Data:    string(dmsBody),
+		}
+		return pbc.sendResponseWithLog(c, fiber.StatusInternalServerError, response)
+	}
+
+	// Log successful DMS response
+	logger.Info(fmt.Sprintf("DMS booking successful for barcode %s. Status: %d", request.Barcode, dmsStatusCode))
+
+	// Update parcel booking status to booked
+	now := time.Now()
+	parcelBooking.CurrentStatus = string(parcel_booking.ParcelBookingStatusBooked)
+	parcelBooking.BookingDate = &now
+	parcelBooking.UpdatedBy = fmt.Sprintf("%d", userID)
+
+	if err := pbc.DB.Save(&parcelBooking).Error; err != nil {
+		response := types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to update parcel booking status",
+			Data:    nil,
+		}
+		return pbc.sendResponseWithLog(c, fiber.StatusInternalServerError, response)
+	}
+
+	// Create parcel booking status event for booked status
+	statusEvent := parcel_booking.ParcelBookingStatusEvent{
+		ParcelBookingID: parcelBooking.ID,
+		Status:          string(parcel_booking.ParcelBookingStatusBooked),
+		CreatedBy:       userID,
+	}
+
+	if err := pbc.DB.Create(&statusEvent).Error; err != nil {
+		// Log the error but don't fail the entire operation
+		logger.Error(fmt.Sprintf("Failed to create parcel booking status event for parcel_booking_id: %d", parcelBooking.ID), err)
+	}
+
+	// Load the user relationship for response
+	pbc.DB.Preload("User").First(&parcelBooking, parcelBooking.ID)
+
+	response := types.ApiResponse{
+		Status:  fiber.StatusOK,
+		Message: "Parcel booking submitted successfully",
+		Data:    parcelBooking,
+	}
+
+	return pbc.sendResponseWithLog(c, fiber.StatusOK, response)
+}
+
+// BookingDms calls the external DMS API to book a parcel
+func (pbc *ParcelBookingController) BookingDms(authHeader, barcode string, parcelBookingID uint) ([]byte, int, error) {
+	baseURL := os.Getenv("DMS_BASE_URL")
+	url := fmt.Sprintf("%s/dms/book/article/", baseURL)
+
+	// Find the parcel booking by ID with user relationship
+	var parcelBooking parcel_booking.ParcelBooking
+	if err := pbc.DB.
+		Preload("User").
+		Where("id = ?", parcelBookingID).
+		First(&parcelBooking).Error; err != nil {
+		return nil, 0, fmt.Errorf("parcel booking not found: %v", err)
+	}
+
+	// Check if parcel booking exists and is in pending status
+	if parcelBooking.ID == 0 {
+		return nil, 0, fmt.Errorf("parcel booking not found")
+	}
+
+	if parcelBooking.CurrentStatus != string(parcel_booking.ParcelBookingStatusPending) {
+		return nil, 0, fmt.Errorf("parcel booking is not in pending status")
+	}
+
+	// Check if required user data is loaded
+	if parcelBooking.User.Uuid == "" {
+		return nil, 0, fmt.Errorf("user information not found for parcel booking")
+	}
+
+	// Create the actual request body structure
+	payload := map[string]interface{}{
+		"ad_pod_id":        "1",
+		"article_desc":     "Passport Delivery",
+		"article_price":    100,
+		"barcode":          barcode,
+		"city_post_status": "No",
+		"delivery_branch":  "100000",
+		"emts_branch_code": "100000",
+		"height":           10,
+		"hnddevice":        "web",
+		"image_pod":        "0",
+		"image_src":        "No",
+		"insurance_price":  "0",
+		"is_bulk_mail":     "No",
+		"isCharge":         "Yes",
+		"is_city_post":     "No",
+		"is_international": false,
+		"isStation":        "No",
+		"length":           10,
+		"receiver": map[string]interface{}{
+			"address_type":   "home",
+			"country":        "Bangladesh",
+			"district":       parcelBooking.RpoName, // Using RpoName as district
+			"division":       "",                    // Can be enhanced if needed
+			"phone_number":   parcelBooking.Phone,
+			"police_station": "",
+			"post_office":    parcelBooking.PostCode,
+			"street_address": parcelBooking.RpoAddress,
+			"user_uuid":      parcelBooking.User.Uuid,
+			"username":       parcelBooking.User.Username,
+			"zone":           "Zone 1",
+		},
+		"sender": map[string]interface{}{
+			"address_type":   "office",
+			"country":        "Bangladesh",
+			"district":       "Dhaka",
+			"division":       "Dhaka",
+			"phone_number":   "018XXXXXXXX",
+			"police_station": "Gulshan",
+			"post_office":    "Gulshan",
+			"street_address": "456, Gulshan, Dhaka",
+			"user_uuid":      parcelBooking.User.Uuid,
+			"username":       "passport-office",
+			"zone":           "Zone 2",
+		},
+		"service_name": "letter",
+		"set_ad":       "No",
+		"vas_type":     "Registry",
+		"vp_amount":    "0",
+		"vp_service":   "No",
+		"weight":       100,
+		"width":        10,
+	}
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to marshal payload: %v", err)
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to create request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeader)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to call booking API: %v", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to read response: %v", err)
+	}
+
+	return body, resp.StatusCode, nil
 }

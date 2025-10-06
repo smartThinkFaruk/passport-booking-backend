@@ -12,3 +12,8 @@ type StoreParcelBookingRequest struct {
 type StorePendingBookingRequest struct {
 	Barcode string `json:"barcode" validate:"required"`
 }
+
+// StoreSubmitRequest represents the request structure for submitting parcel booking
+type StoreSubmitRequest struct {
+	Barcode string `json:"barcode" validate:"required"`
+}
