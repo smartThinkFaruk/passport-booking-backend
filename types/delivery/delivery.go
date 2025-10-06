@@ -73,3 +73,27 @@ func (r *VerifyApplicationIDRequest) Validate() error {
 
 	return nil
 }
+
+type ReceiveItemRequest struct {
+	ItemID string `json:"item_id,omitempty"`
+}
+
+// Validate validates the ReceiveItemRequest fields
+func (r *ReceiveItemRequest) Validate() error {
+	if r.ItemID == "" {
+		return fmt.Errorf("booking_id is required")
+	}
+	return nil
+}
+
+type ItemDeliveryRequest struct {
+	BookingID string `json:"booking_id" validate:"required"`
+}
+
+// Validate validates the ItemDeliveryRequest fields
+func (r *ItemDeliveryRequest) Validate() error {
+	if r.BookingID == "" {
+		return fmt.Errorf("booking_id is required")
+	}
+	return nil
+}

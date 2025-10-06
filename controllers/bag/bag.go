@@ -1422,6 +1422,6 @@ func (bc *BagController) updateBookingsAfterBagReceived(bagID string, c *fiber.C
 		return fmt.Errorf("failed to commit booking updates: %v", err)
 	}
 
-	fmt.Printf("Successfully updated %d bookings for bag ID %s to received_by_postman status\n", len(bookings), bagID)
+	fmt.Printf("Successfully updated %d bookings for bag ID %s to item_received_by_postman status\n", len(bookings), bagID)
 	return nil
 }

@@ -1,9 +1,14 @@
 package delivery
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,7 +21,6 @@ import (
 	"passport-booking/types"
 	deliveryTypes "passport-booking/types/delivery"
 	"passport-booking/utils"
-	"strconv"
 )
 
 // DeliveryController handles delivery-related HTTP requests
@@ -125,13 +129,23 @@ func (dc *DeliveryController) DeliveryConfirmationSendOtp(c *fiber.Ctx) error {
 
 	// Validate booking is ready for delivery confirmation
 	// Check if booking status allows delivery confirmation (received by postman)
-	if booking.Status != bookingModel.BookingStatusReceivedByPostman {
+	if booking.Status != bookingModel.BookingStatusReceivedByPostman && booking.Status != bookingModel.BookingItemStatusReceivedByPostman {
 		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
 			Status:  fiber.StatusBadRequest,
 			Message: "Booking must be received by postman before delivery confirmation",
 			Data:    nil,
 		})
 	}
+
+	//if booking.Status == bookingModel.BookingStatusReceivedByPostman || booking.Status == bookingModel.BookingItemStatusReceivedByPostman {
+	//	// Status is valid, continue with delivery confirmation
+	//} else {
+	//	return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+	//		Status:  fiber.StatusBadRequest,
+	//		Message: "Booking must be received by postman before delivery confirmation",
+	//		Data:    nil,
+	//	})
+	//}
 
 	if booking.DeliveryPhone == nil {
 		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
@@ -518,10 +532,20 @@ func (dc *DeliveryController) VerifyApplicationID(c *fiber.Ctx) error {
 	}
 
 	// Validate booking status allows application ID verification
-	if booking.Status != bookingModel.BookingStatusReceivedByPostman {
+	//if booking.Status != bookingModel.BookingStatusReceivedByPostman  {
+	//	return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+	//		Status:  fiber.StatusBadRequest,
+	//		Message: "Booking must be received by postman before application ID verification",
+	//		Data:    nil,
+	//	})
+	//}
+
+	if booking.Status == bookingModel.BookingStatusReceivedByPostman || booking.Status == bookingModel.BookingItemStatusReceivedByPostman {
+		// Status is valid, continue with delivery confirmation
+	} else {
 		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
 			Status:  fiber.StatusBadRequest,
-			Message: "Booking must be received by postman before application ID verification",
+			Message: "Booking must be received by postman before delivery confirmation",
 			Data:    nil,
 		})
 	}
@@ -846,5 +870,537 @@ func (dc *DeliveryController) ItemDetails(c *fiber.Ctx) error {
 		Status:  fiber.StatusOK,
 		Message: "Booking details found",
 		Data:    booking,
+	})
+}
+
+// ReceiveItem handles receiving an item by postman
+func (dc *DeliveryController) ReceiveItem(c *fiber.Ctx) error {
+	var reqBody deliveryTypes.ReceiveItemRequest
+
+	authHeader := c.Get("Authorization")
+
+	if authHeader == "" {
+		errorResponse := types.ApiResponse{
+			Message: "Authorization header is required",
+			Status:  fiber.StatusUnauthorized,
+		}
+		c.Status(fiber.StatusUnauthorized).JSON(errorResponse)
+		dc.logAPIRequest(c)
+		return nil
+	}
+
+	if err := c.BodyParser(&reqBody); err != nil {
+		errorResponse := types.ApiResponse{
+			Message: "Invalid request body",
+			Status:  fiber.StatusBadRequest,
+		}
+		c.Status(fiber.StatusBadRequest).JSON(errorResponse)
+		dc.logAPIRequest(c)
+		return nil
+	}
+
+	// Validate request - now item_id is required (it's the barcode)
+	if reqBody.ItemID == "" {
+		errorResponse := types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "item_id is required",
+		}
+		c.Status(fiber.StatusBadRequest).JSON(errorResponse)
+		dc.logAPIRequest(c)
+		return nil
+	}
+
+	// First find the booking by barcode (item_id is the barcode)
+	var booking bookingModel.Booking
+	if err := dc.DB.Preload("User").Where("barcode = ?", reqBody.ItemID).First(&booking).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			errorResponse := types.ApiResponse{
+				Status:  fiber.StatusNotFound,
+				Message: "Booking not found with the provided item_id",
+			}
+			c.Status(fiber.StatusNotFound).JSON(errorResponse)
+			dc.logAPIRequest(c)
+			return nil
+		}
+		errorResponse := types.ApiResponse{
+			Message: "Failed to find booking",
+			Status:  fiber.StatusInternalServerError,
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		dc.logAPIRequest(c)
+		return nil
+	}
+
+	if booking.Status != bookingModel.BookingStatusReceivedByPostMaster {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Item must be received by postmaster before delivery. Please receive the item first.",
+			Data:    nil,
+		})
+	}
+
+	// Get bag_id from the booking
+	var bagID string
+	if booking.CurrentBagID != nil {
+		bagID = *booking.CurrentBagID
+	} else {
+		errorResponse := types.ApiResponse{
+			Message: "No bag_id found for this booking",
+			Status:  fiber.StatusBadRequest,
+		}
+		c.Status(fiber.StatusBadRequest).JSON(errorResponse)
+		dc.logAPIRequest(c)
+		return nil
+	}
+	// Prepare payload for DMS API - using the new structure
+	payload := map[string]interface{}{
+		"bag_id":      bagID,
+		"item_id":     reqBody.ItemID,
+		"recieve_all": "1", // Set to "0" since we're receiving specific item
+	}
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		errorResponse := types.ApiResponse{
+			Message: "Failed to marshal payload",
+			Status:  fiber.StatusInternalServerError,
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		dc.logAPIRequest(c)
+		return nil
+	}
+
+	baseURL := os.Getenv("DMS_BASE_URL")
+	if baseURL == "" {
+		errorResponse := types.ApiResponse{
+			Message: "DMS_BASE_URL environment variable is not set",
+			Status:  fiber.StatusInternalServerError,
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		dc.logAPIRequest(c)
+		return nil
+	}
+
+	// Use the correct endpoint
+	url := fmt.Sprintf("%s/rms/receive-bag-item/", baseURL)
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		errorResponse := types.ApiResponse{
+			Message: "Failed to create request",
+			Status:  fiber.StatusInternalServerError,
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		dc.logAPIRequest(c)
+		return nil
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", authHeader)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		errorResponse := types.ApiResponse{
+			Message: "Failed to send request",
+			Status:  fiber.StatusInternalServerError,
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		dc.logAPIRequest(c)
+		return nil
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		errorResponse := types.ApiResponse{
+			Message: "Failed to read response",
+			Status:  fiber.StatusInternalServerError,
+		}
+		c.Status(fiber.StatusInternalServerError).JSON(errorResponse)
+		dc.logAPIRequest(c)
+		return nil
+	}
+
+	var responseData interface{}
+	if err := json.Unmarshal(body, &responseData); err != nil {
+		// If JSON decoding fails, return the raw response
+		finalResponse := types.ApiResponse{
+			Message: "Failed to decode response",
+			Status:  resp.StatusCode,
+			Data:    string(body),
+		}
+		c.Status(resp.StatusCode).JSON(finalResponse)
+		dc.logAPIRequest(c)
+		return nil
+	}
+
+	// Check the response status code
+	if resp.StatusCode == http.StatusOK {
+		// Successfully received item - now update the booking status
+		if err := dc.updateBookingAfterItemReceived(reqBody.ItemID, c); err != nil {
+			// Log the error but don't fail the main operation since item was successfully received
+			fmt.Printf("Failed to update booking after item received: %v\n", err)
+		}
+
+		finalResponse := types.ApiResponse{
+			Message: "Item received successfully",
+			Status:  resp.StatusCode,
+			Data:    responseData,
+		}
+		c.Status(resp.StatusCode).JSON(finalResponse)
+		dc.logAPIRequest(c)
+		return nil
+	} else {
+		// For error responses, extract the message from the response data if available
+		var message string = "Item reception failed"
+
+		// Try to extract message from response data
+		if respMap, ok := responseData.(map[string]interface{}); ok {
+			if respMessage, exists := respMap["message"]; exists {
+				if msgStr, ok := respMessage.(string); ok {
+					message = msgStr
+				}
+			}
+		}
+
+		errorResponse := types.ApiResponse{
+			Message: message,
+			Status:  resp.StatusCode,
+			Data:    responseData,
+		}
+		c.Status(resp.StatusCode).JSON(errorResponse)
+		dc.logAPIRequest(c)
+		return nil
+	}
+}
+
+// updateBookingAfterItemReceived updates the booking status after item is successfully received
+func (dc *DeliveryController) updateBookingAfterItemReceived(bookingID string, c *fiber.Ctx) error {
+	// Get user authentication information (postman user)
+	claims, ok := c.Locals("user").(map[string]interface{})
+	if !ok {
+		return fmt.Errorf("invalid user claims")
+	}
+
+	userUUID, ok := claims["uuid"].(string)
+	if !ok || userUUID == "" {
+		return fmt.Errorf("user UUID not found in token")
+	}
+
+	// Get postman user info
+	postmanInfo, err := utils.GetUserByUUID(userUUID)
+	if err != nil {
+		return fmt.Errorf("failed to get postman info: %v", err)
+	}
+
+	// Find the booking by barcode
+	var booking bookingModel.Booking
+	if err := dc.DB.Preload("User").Where("barcode = ?", bookingID).First(&booking).Error; err != nil {
+		return fmt.Errorf("failed to find booking: %v", err)
+	}
+
+	// Store postman info who received the item
+	postmanIDStr := strconv.FormatUint(uint64(postmanInfo.ID), 10)
+
+	// Update booking status to received by postman
+	booking.Status = bookingModel.BookingItemStatusReceivedByPostman
+	booking.UpdatedBy = postmanIDStr
+
+	// Save the updated booking
+	if err := dc.DB.Save(&booking).Error; err != nil {
+		return fmt.Errorf("failed to update booking: %v", err)
+	}
+
+	// Create booking status event
+	bookingStatusEvent := bookingModel.BookingStatusEvent{
+		BookingID: booking.ID,
+		Status:    booking.Status,
+		CreatedBy: postmanIDStr,
+	}
+
+	if err := dc.DB.Create(&bookingStatusEvent).Error; err != nil {
+		logger.Error("Failed to create booking status event", err)
+		// Don't return error for status event failure
+	}
+
+	// Create booking event for item received
+	if err := booking_event.SnapshotBookingToEvent(dc.DB, &booking, "item_received_by_postman", postmanIDStr); err != nil {
+		logger.Error("Failed to write booking event (item_received_by_postman)", err)
+		// Don't fail the request for this error
+	}
+
+	logger.Success(fmt.Sprintf("Item received by postman for booking ID: %d (Barcode: %s) by postman: %s", booking.ID, bookingID, postmanInfo.LegalName))
+
+	return nil
+}
+
+// ItemDelivery handles the delivery of an item to the customer
+func (dc *DeliveryController) ItemDelivery(c *fiber.Ctx) error {
+	var req deliveryTypes.ItemDeliveryRequest
+	if err := c.BodyParser(&req); err != nil {
+		logger.Error("Failed to parse request body", err)
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Invalid request body",
+			Data:    nil,
+		})
+	}
+
+	// Validate request using the validation method from types
+	if err := req.Validate(); err != nil {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: err.Error(),
+			Data:    nil,
+		})
+	}
+
+	// Get authorization header for external API call
+	authHeader := c.Get("Authorization")
+	if authHeader == "" {
+		return dc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Status:  fiber.StatusUnauthorized,
+			Message: "Authorization header is required",
+			Data:    nil,
+		})
+	}
+
+	// Get user authentication information (postman user)
+	claims, ok := c.Locals("user").(map[string]interface{})
+	if !ok {
+		return dc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Message: "Invalid user claims",
+			Status:  fiber.StatusUnauthorized,
+			Data:    nil,
+		})
+	}
+
+	userUUID, ok := claims["uuid"].(string)
+	if !ok || userUUID == "" {
+		return dc.sendResponseWithLog(c, fiber.StatusUnauthorized, types.ApiResponse{
+			Message: "User UUID not found in token",
+			Status:  fiber.StatusUnauthorized,
+			Data:    nil,
+		})
+	}
+
+	// Get postman user info
+	postmanInfo, err := utils.GetUserByUUID(userUUID)
+	if err != nil {
+		logger.Error("Error finding postman by UUID", err)
+		status := fiber.StatusInternalServerError
+		msg := "Database error"
+		if err.Error() == "user not found" {
+			status = fiber.StatusUnauthorized
+			msg = "Postman not found"
+		}
+		return dc.sendResponseWithLog(c, status, types.ApiResponse{
+			Message: msg,
+			Status:  status,
+			Data:    nil,
+		})
+	}
+
+	// Find the booking by barcode
+	var booking bookingModel.Booking
+	if err := dc.DB.Preload("User").Where("barcode = ?", req.BookingID).First(&booking).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return dc.sendResponseWithLog(c, fiber.StatusNotFound, types.ApiResponse{
+				Status:  fiber.StatusNotFound,
+				Message: "Booking not found",
+				Data:    nil,
+			})
+		}
+		logger.Error("Failed to find booking", err)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Internal server error",
+			Data:    nil,
+		})
+	}
+
+	// Check if item is received by postman and updated_by matches authenticated user
+	postmanIDStr := strconv.FormatUint(uint64(postmanInfo.ID), 10)
+	if booking.Status != bookingModel.BookingItemStatusReceivedByPostman {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Item must be received by postman before delivery. Please receive the item first.",
+			Data:    nil,
+		})
+	}
+
+	if booking.UpdatedBy != postmanIDStr {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "You can only deliver items that you have received. Please receive the item first.",
+			Data:    nil,
+		})
+	}
+
+	// Validate all required conditions are met
+	if !booking.DeliveryPhoneConfirmedVerified {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Delivery phone must be confirmed and verified before delivery",
+			Data:    nil,
+		})
+	}
+
+	if !booking.DeliveryApplicationIDVerified {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Application ID must be verified before delivery",
+			Data:    nil,
+		})
+	}
+
+	if booking.UploadPhoto == nil || *booking.UploadPhoto == "" {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Photo must be uploaded before delivery",
+			Data:    nil,
+		})
+	}
+
+	// Check if booking status allows delivery
+	if booking.Status == bookingModel.BookingStatusDelivered {
+		return dc.sendResponseWithLog(c, fiber.StatusBadRequest, types.ApiResponse{
+			Status:  fiber.StatusBadRequest,
+			Message: "Item is already delivered",
+			Data:    nil,
+		})
+	}
+
+	// Prepare payload for external API call
+	payload := map[string]interface{}{
+		"article_id": booking.Barcode,
+	}
+
+	jsonPayload, err := json.Marshal(payload)
+	if err != nil {
+		logger.Error("Failed to marshal payload for external API", err)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to prepare API request",
+			Data:    nil,
+		})
+	}
+
+	// Get DMS base URL from environment
+	baseURL := os.Getenv("DMS_BASE_URL")
+	if baseURL == "" {
+		logger.Error("DMS_BASE_URL environment variable is not set", nil)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "External service configuration error",
+			Data:    nil,
+		})
+	}
+
+	// Make external API call to deliver article
+	url := fmt.Sprintf("%s/dms/deliver/article/", baseURL)
+	httpReq, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		logger.Error("Failed to create HTTP request for external API", err)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to create external API request",
+			Data:    nil,
+		})
+	}
+
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", authHeader)
+
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+	}
+	resp, err := client.Do(httpReq)
+	if err != nil {
+		logger.Error("Failed to call external delivery API", err)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to connect to external delivery service",
+			Data:    nil,
+		})
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		logger.Error("Failed to read external API response", err)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to read external API response",
+			Data:    nil,
+		})
+	}
+
+	var externalAPIResponse interface{}
+	if err := json.Unmarshal(body, &externalAPIResponse); err != nil {
+		logger.Warning(fmt.Sprintf("Failed to decode external API response as JSON: %v", err))
+		externalAPIResponse = string(body)
+	}
+
+	// Check if external API call was successful
+	if resp.StatusCode != http.StatusOK {
+		logger.Error(fmt.Sprintf("External delivery API returned error: %d", resp.StatusCode), nil)
+		return dc.sendResponseWithLog(c, fiber.StatusBadGateway, types.ApiResponse{
+			Status:  fiber.StatusBadGateway,
+			Message: "External delivery service failed",
+			Data: map[string]interface{}{
+				"external_status":   resp.StatusCode,
+				"external_response": externalAPIResponse,
+			},
+		})
+	}
+
+	// External API call successful, update booking status
+	postmanIDStr = strconv.FormatUint(uint64(postmanInfo.ID), 10)
+	booking.Status = bookingModel.BookingStatusDelivered
+	booking.UpdatedBy = postmanIDStr
+
+	// Save the updated booking
+	if err := dc.DB.Save(&booking).Error; err != nil {
+		logger.Error("Failed to update booking status after delivery", err)
+		return dc.sendResponseWithLog(c, fiber.StatusInternalServerError, types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to update booking status",
+			Data:    nil,
+		})
+	}
+
+	// Create booking status event
+	bookingStatusEvent := bookingModel.BookingStatusEvent{
+		BookingID: booking.ID,
+		Status:    booking.Status,
+		CreatedBy: postmanIDStr,
+	}
+
+	if err := dc.DB.Create(&bookingStatusEvent).Error; err != nil {
+		logger.Error("Failed to create booking status event for delivery", err)
+		// Don't fail the request for this error
+	}
+
+	// Create booking event for delivery
+	if err := booking_event.SnapshotBookingToEvent(dc.DB, &booking, "item_delivered", postmanIDStr); err != nil {
+		logger.Error("Failed to write booking event (item_delivered)", err)
+		// Don't fail the request for this error
+	}
+
+	logger.Success(fmt.Sprintf("Item delivered successfully for booking ID: %d (Barcode: %s) by postman: %s", booking.ID, req.BookingID, postmanInfo.LegalName))
+
+	responseData := map[string]interface{}{
+		"booking":           booking,
+		"delivered":         true,
+		"postman_id":        postmanInfo.ID,
+		"postman_name":      postmanInfo.LegalName,
+		"external_response": externalAPIResponse,
+	}
+
+	return dc.sendResponseWithLog(c, fiber.StatusOK, types.ApiResponse{
+		Status:  fiber.StatusOK,
+		Message: "Item delivered successfully",
+		Data:    responseData,
 	})
 }

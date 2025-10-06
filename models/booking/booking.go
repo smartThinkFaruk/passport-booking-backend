@@ -52,13 +52,14 @@ type Booking struct {
 type BookingStatus string
 
 const (
-	BookingStatusInitial              BookingStatus = "initial"
-	BookingStatusPreBooked            BookingStatus = "pre_booked"
-	BookingStatusBooked               BookingStatus = "booked"
-	BookingStatusReceivedByPostman    BookingStatus = "received_by_postman"
-	BookingStatusReceivedByPostMaster BookingStatus = "received_by_postmaster"
-	BookingStatusReturn               BookingStatus = "return"
-	BookingStatusDelivered            BookingStatus = "delivered"
+	BookingStatusInitial               BookingStatus = "initial"
+	BookingStatusPreBooked             BookingStatus = "pre_booked"
+	BookingStatusBooked                BookingStatus = "booked"
+	BookingItemStatusReceivedByPostman BookingStatus = "item_received_by_postman"
+	BookingStatusReceivedByPostman     BookingStatus = "bag_received_by_postman"
+	BookingStatusReceivedByPostMaster  BookingStatus = "received_by_postmaster"
+	BookingStatusReturn                BookingStatus = "return"
+	BookingStatusDelivered             BookingStatus = "delivered"
 )
 
 type BookingType string
