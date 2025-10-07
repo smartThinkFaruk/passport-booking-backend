@@ -178,6 +178,10 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 		constants.PermParcelOperatorFull,
 	), regionalPassportOfficeController.GetRegionalPassportOffices)
 
+	regionalOfficeGroup.Post("/store", middleware.RequirePermissions(
+		constants.PermSuperAdminFull,
+	), regionalPassportOfficeController.StoreRegionalPassportOffice)
+
 	/*=============================================================================
 	| Parcel Booking Routes
 	===============================================================================*/

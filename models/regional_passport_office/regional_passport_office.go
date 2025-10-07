@@ -8,6 +8,7 @@ type RegionalPassportOffice struct {
 	Name      string    `gorm:"size:120;not null;index"       json:"name"`
 	Address   string    `gorm:"type:text;not null"            json:"address"`
 	Mobile    string    `gorm:"size:20;index"                 json:"mobile"`
+	CreatedBy uint      `gorm:"null"                          json:"createdBy"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }

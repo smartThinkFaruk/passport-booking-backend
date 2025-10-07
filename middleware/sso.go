@@ -6,15 +6,14 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v5"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"passport-booking/types"
 	"strings"
-
-	"github.com/gofiber/fiber/v2"
-	"github.com/golang-jwt/jwt/v5"
 )
 
 // FetchPublicKey fetches the public key from the given URL.
@@ -170,6 +169,7 @@ func hasPermission(jwtToken string, requiredPermissions []string) (map[string]in
 	return claims, false // No matching permissions found
 }
 
+// IsAuthenticated is a middleware that checks for a valid JWT token
 func IsAuthenticated(requiredPermissions []string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		//log.Printf("IsAuthenticated middleware called with permissions: %v", requiredPermissions)
