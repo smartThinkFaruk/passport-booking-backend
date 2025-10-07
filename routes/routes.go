@@ -200,4 +200,8 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	parcelBookingGroup.Post("/submit", middleware.RequirePermissions(
 		constants.PermParcelOperatorFull,
 	), parcelBookingController.StoreSubmit)
+
+	parcelBookingGroup.Get("/list", middleware.RequirePermissions(
+		constants.PermParcelOperatorFull,
+	), parcelBookingController.Index)
 }

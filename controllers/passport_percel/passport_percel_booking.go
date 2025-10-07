@@ -631,3 +631,72 @@ func (pbc *ParcelBookingController) BookingDms(authHeader, barcode string, parce
 
 	return body, resp.StatusCode, nil
 }
+
+// Index handles listing parcel bookings with pagination and filtering
+func (pbc *ParcelBookingController) Index(c *fiber.Ctx) error {
+	// Default pagination
+	page := c.QueryInt("page", 1)
+	limit := c.QueryInt("limit", 10)
+	offset := (page - 1) * limit
+
+	// Get query parameters for filtering
+	barcode := c.Query("barcode")
+	startDateStr := c.Query("start_date")
+	endDateStr := c.Query("end_date")
+	status := c.Query("status")
+
+	// Build the query
+	query := pbc.DB.Model(&parcel_booking.ParcelBooking{})
+
+	if barcode != "" {
+		query = query.Where("barcode LIKE ?", "%"+barcode+"%")
+	}
+
+	if startDateStr != "" && endDateStr != "" {
+		startDate, err1 := time.Parse("2006-01-02", startDateStr)
+		endDate, err2 := time.Parse("2006-01-02", endDateStr)
+		if err1 == nil && err2 == nil {
+			query = query.Where("created_at BETWEEN ? AND ?", startDate, endDate.Add(24*time.Hour))
+		}
+	}
+
+	if status != "" {
+		query = query.Where("current_status = ?", status)
+	}
+
+	// Get total count for pagination
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		response := types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to count parcel bookings",
+			Data:    nil,
+		}
+		return pbc.sendResponseWithLog(c, fiber.StatusInternalServerError, response)
+	}
+
+	// Get parcel bookings with pagination
+	var parcelBookings []parcel_booking.ParcelBooking
+	if err := query.Preload("User").Offset(offset).Limit(limit).Order("created_at desc").Find(&parcelBookings).Error; err != nil {
+		response := types.ApiResponse{
+			Status:  fiber.StatusInternalServerError,
+			Message: "Failed to retrieve parcel bookings",
+			Data:    nil,
+		}
+		return pbc.sendResponseWithLog(c, fiber.StatusInternalServerError, response)
+	}
+
+	response := types.ApiResponse{
+		Status:  fiber.StatusOK,
+		Message: "Parcel bookings retrieved successfully",
+		Data: fiber.Map{
+			"data":      parcelBookings,
+			"total":     total,
+			"page":      page,
+			"limit":     limit,
+			"last_page": (total + int64(limit) - 1) / int64(limit),
+		},
+	}
+
+	return pbc.sendResponseWithLog(c, fiber.StatusOK, response)
+}
