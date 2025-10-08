@@ -57,6 +57,10 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	bagGroup.Post("/create", middleware.RequirePermissions(constants.PermOperatorFull), bag.CreateBag)
 	bagGroup.Post("/item_add", middleware.RequirePermissions(constants.PermOperatorFull), bag.AddItemToBag)
 	bagGroup.Post("/close", middleware.RequirePermissions(constants.PermOperatorFull), bag.CloseBag)
+	bagGroup.Get("/booking_list", middleware.RequirePermissions(
+		constants.PermOperatorFull,
+		constants.PermAgentHasFull,
+	), bagController.Index)
 
 	bagGroup.Post("/receive", middleware.RequirePermissions(
 		constants.PermPostmanFull,
@@ -94,6 +98,7 @@ func SetupRoutes(app *fiber.App, db *gorm.DB) {
 	bookingGroup.Get("/list", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
 		constants.PermCustomerFull,
+		constants.PermOperatorFull,
 	), bookingController.Index)
 	bookingGroup.Get("/details/:id", middleware.RequirePermissions(
 		constants.PermAgentHasFull,
