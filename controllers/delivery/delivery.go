@@ -851,7 +851,9 @@ func (dc *DeliveryController) ItemDetails(c *fiber.Ctx) error {
 	var booking bookingModel.Booking
 	// Convert postmanInfo.ID to string for updated_by comparison
 	updatedByStr := fmt.Sprintf("%v", postmanInfo.ID)
-	err = dc.DB.Where("barcode = ? AND status = ? AND updated_by = ?", req.Barcode, bookingModel.BookingStatusReceivedByPostman, updatedByStr).First(&booking).Error
+	//err = dc.DB.Where("barcode = ? AND status = ? AND updated_by = ?", req.Barcode, bookingModel.BookingItemStatusReceivedByPostman, updatedByStr).First(&booking).Error
+	err = dc.DB.Where("barcode = ? AND status IN (?) AND updated_by = ?", req.Barcode, []string{string(bookingModel.BookingItemStatusReceivedByPostman), string(bookingModel.BookingStatusReceivedByPostman)}, updatedByStr).First(&booking).Error
+
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return dc.sendResponseWithLog(c, fiber.StatusNotFound, types.ApiResponse{
